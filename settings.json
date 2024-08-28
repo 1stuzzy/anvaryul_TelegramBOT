@@ -1,8 +1,9 @@
 {
     "db": {
-        "database": "",
-        "user": "",
-        "password": ""
+        "database": "Base",
+        "user": "postgres",
+        "password": "456852123",
+        "host": "localhost"
     },
     "api_token": "6697941790:AAGF17sNqO6Ejd7vD58gH-mF6HCBIL4woOk",
     "admins_id": [5889390958],

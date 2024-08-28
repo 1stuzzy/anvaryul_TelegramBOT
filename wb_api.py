@@ -1,49 +1,65 @@
 import aiohttp
-import os
-import json
-from utils.config import load_config
-
-API_URL = "https://supplies-api.wildberries.ru/api/v1/warehouses"
-WAREHOUSES_FILE = "warehouses.json"
-config = load_config()
+from loader import config
+from loguru import logger
 
 
-# Функция для сохранения данных в JSON файл
-def save_warehouses_to_json(data):
-    with open(WAREHOUSES_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
-
-# Функция для загрузки данных из JSON файла
-def load_warehouses_from_json():
-    if os.path.exists(WAREHOUSES_FILE):
-        with open(WAREHOUSES_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return None
-
-
-# Асинхронная функция для получения данных о складах из API
-async def fetch_warehouses_from_api():
+async def get_warehouses():
     headers = {
         'Authorization': f'Bearer {config.api_key}'
     }
+    url = "https://supplies-api.wildberries.ru/api/v1/warehouses"
     async with aiohttp.ClientSession() as session:
-        async with session.get(API_URL, headers=headers) as response:
-            if response.status == 200:
-                data = await response.json()
-                save_warehouses_to_json(data)  # Сохраняем данные в JSON файл
-                return data
-            else:
-                print(f"Ошибка: {response.status}")
-                return []
+        try:
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                else:
+                    logger.error(f"Ошибка при запросе к API: {response.status}")
+                    return []
+        except Exception as e:
+            logger.exception(f"Произошла ошибка при запросе к API: {e}")
+            return []
 
 
-# Асинхронная функция для получения данных (из JSON файла или API)
-async def get_warehouses():
-    # Сначала пытаемся загрузить данные из JSON файла
-    data = load_warehouses_from_json()
-    if data:
-        return data
+async def get_coefficients(warehouse_id=None):
+    headers = {
+        'Authorization': f'Bearer {config.api_key}'
+    }
+    params = {}
+    url = "https://supplies-api.wildberries.ru/api/v1/acceptance/coefficients"
 
-    # Если файла нет или он пуст, делаем запрос к API
-    return await fetch_warehouses_from_api()
+    if warehouse_id:
+        # Предполагаем, что warehouse_id может быть как числом, так и списком чисел
+        if isinstance(warehouse_id, list):
+            params['warehouseIDs'] = ','.join(map(str, warehouse_id))
+        else:
+            params['warehouseIDs'] = str(warehouse_id)
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(url, headers=headers, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                else:
+                    logger.error(f"Ошибка при запросе к API: {response.status} - {await response.text()}")
+                    return None
+        except Exception as e:
+            logger.exception(f"Произошла ошибка при запросе к API: {e}")
+            return None
+
+
+async def test_get_coefficients():
+    # Проверка с одним складом
+    result_single = await get_coefficients(6156)
+    print("Коэффициенты для одного склада:", result_single)
+
+    # Проверка с несколькими складами
+    result_multiple = await get_coefficients([6156, 507])
+    print("Коэффициенты для нескольких складов:", result_multiple)
+
+if __name__ == "__main__":
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(test_get_coefficients())

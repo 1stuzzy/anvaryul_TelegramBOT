@@ -1,55 +1,22 @@
-import os
+from pydantic import BaseModel
+from typing import List, Dict
 import json
-from typing import List, Optional, get_origin
-
-from pydantic import BaseModel, root_validator
+import os
 
 
-class JsonModel(BaseModel):
-    @root_validator(pre=True)
-    def set_default(cls, values):
-        """Make not defined values by default types"""
-        for key, field in cls.__fields__.items():
-            if key not in values:
-                if field.default is not None:
-                    values[key] = field.default
-                else:
-                    origin = get_origin(field.outer_type_)
-                    if origin is not None:
-                        default_type = origin
-                    else:
-                        default_type = field.outer_type_
-                    values[key] = default_type()
-        return values
-
-
-class Database(JsonModel):
+class DatabaseConfig(BaseModel):
     database: str
     user: str
     password: str
+    host: str = "localhost"
 
 
-class Qiwi(JsonModel):
-    token: str
-    proxy_url: Optional[str]
-    wallet: Optional[str]
-    public_key: str
-
-
-class FakeRequisites(JsonModel):
-    russian: List[str]
-    ukrainian: List[str]
-
-
-class Config(JsonModel):
-    db: Database
-
+class Config(BaseModel):
+    db: DatabaseConfig
     api_token: str
+    api_key: str
     admins_id: List[int]
     admins_chat: int
-
-    api_key: str
-
     time_zone: str = "Europe/Moscow"
     skip_updates: bool = True
     notify: bool = True

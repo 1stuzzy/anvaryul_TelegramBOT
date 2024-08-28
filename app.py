@@ -4,13 +4,14 @@ import threading
 from aiogram import Dispatcher, executor
 from loguru import logger
 
-#from Package.models import connect, disconnect
+from db.models import connect, disconnect
 from loader import config, dp
 from utils.notify import on_startup_notify
 from utils.logger_config import setup_logger
 
 
 async def on_startup(dispatcher: Dispatcher):
+    connect()
 
     setup_logger(level="DEBUG")
 
@@ -22,6 +23,7 @@ async def on_startup(dispatcher: Dispatcher):
 
 
 async def on_shutdown(_):
+    disconnect()
     logger.info('Bot Stopped!')
 
 
