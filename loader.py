@@ -18,6 +18,6 @@ from utils.config import load_config
 
 config = load_config()
 
-storage = MemoryStorage()
+
 bot = Bot(config.api_token, parse_mode=ParseMode.HTML)
-dp = Dispatcher(bot, storage=storage)
+dp = Dispatcher(bot, storage=MemoryStorage())
