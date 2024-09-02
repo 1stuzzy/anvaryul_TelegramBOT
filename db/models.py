@@ -25,25 +25,28 @@ class BaseModel(Model):
         database = base
 
 
-class Warehouse(BaseModel):
+class Warehouses(BaseModel):
     warehouse_id = IntegerField(unique=True, index=True)
     name = CharField(max_length=255)
     address = TextField()
 
 
-class UserTasks(BaseModel):
-    user_id = IntegerField(unique=True, index=True)
-    name = CharField(max_length=255)
-    params = TextField()
-    task_id = IntegerField(unique=True)
+class UserRequest(BaseModel):  # Наследуем от BaseModel, а не Model
+    user_id = BigIntegerField()  # Измените на BigIntegerField
+    warehouse_ids = CharField()  # Сохраняем в виде строки, например: "1733, 303295"
+    supply_types = CharField()  # Сохраняем в виде строки, например: "qr_supply, boxes"
+    coefficient = CharField()  # Сохраняем выбранный коэффициент
+    period = CharField()  # Период
+    notification_type = CharField()
+    activate = BooleanField(default=False)
 
 
 def connect():
     base.connect()
     base.create_tables(
         [
-            Warehouse,
-            UserTasks
+            Warehouses,
+            UserRequest
         ]
     )
 
