@@ -1,62 +1,55 @@
 import asyncio
 from aiogram import Dispatcher, executor
+from loader import config, dp
 from loguru import logger
+from data.redis_base import RedisClient
+from functions.task_notify import NotificationService
+from functions.wb_api import ApiClient
 
-from loader import config, dp, bot
-from utils.notify import on_startup_notify
-from utils.logger_config import setup_logger
-from wb_api import process_notifications, check_and_notify_users, save_warehouses_to_db
-from db.basefunctional import init_redis
-
-notification_task = None
 
 async def on_startup(dispatcher: Dispatcher):
-    global notification_task
-    
-    # Настройка логирования
+
+    from utils.logger_config import setup_logger
     setup_logger(level="DEBUG")
 
+    from utils.notify import on_startup_notify
+    if config.notify:
+        await on_startup_notify(dp)
+
+    redis_client = RedisClient(redis_url='redis://localhost')
+    await redis_client.init()
+
+    if redis_client and redis_client.redis:
+        logger.info("Redis client successfully initialized.")
+    else:
+        logger.error("Failed to initialize Redis client.")
+        raise SystemExit("Cannot initialize Redis client")
+
+    dispatcher.bot['redis_client'] = redis_client
+
     logger.info("Setting up handlers...")
-    
-    # Импорт обработчиков (handlers) после настройки
     import handlers
 
-    # Уведомление о старте бота, если включено
-    if config.notify:
-        await on_startup_notify(dispatcher)
+    api_client = ApiClient(api_key=config.api_key)
 
-    # Сохранение данных складов в базу (предполагаем, что функция асинхронная)
-    #await save_warehouses_to_db()
+    await RedisClient.upload_warehouses(api_client, redis_client)
 
-    # Инициализация подключения к Redis
-    #redis = await init_redis()
-
-    # Запуск задачи обработки уведомлений
-    #notification_task = asyncio.create_task(process_notifications(redis))
-
-    # Запуск регулярной проверки и отправки уведомлений
-    #asyncio.create_task(check_and_notify_users(redis))
-    asyncio.create_task(check_and_notify_users(bot))
+    notification_service = NotificationService(api_client=api_client,
+                                               redis_client=redis_client,
+                                               bot=dispatcher.bot)
+    asyncio.create_task(notification_service.check_and_notify_users())
 
 
 async def on_shutdown(_):
-    global notification_task
-    
-    # Остановка задачи уведомлений, если она была запущена
-    if notification_task:
-        notification_task.cancel()
-        await notification_task
-
     logger.info('Bot Stopped!')
 
+
 def main():
-    # Запуск бота с polling
     executor.start_polling(
         dp,
         skip_updates=config.skip_updates,
         on_startup=on_startup,
         on_shutdown=on_shutdown,
-        timeout=5,
     )
 
 

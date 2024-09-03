@@ -1,7 +1,7 @@
 from typing import Union, Optional
 
 from loguru import logger
-from sys import stderr  # stdin, stdout or stderr
+from sys import stderr
 
 
 def setup_logger(

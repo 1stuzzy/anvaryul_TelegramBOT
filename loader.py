@@ -1,7 +1,3 @@
-import asyncio
-
-from pyrogram import Client
-from pyrogram.session import Session
 from aiogram import Bot, Dispatcher
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.types import ParseMode
