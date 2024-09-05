@@ -27,9 +27,18 @@ def alerts_keyboard() -> InlineKeyboardMarkup:
     """Создает клавиатуру для оповещений с опциями управления запросами."""
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("❓ Как это работает?", callback_data="faq"))
-    markup.add(InlineKeyboardButton("📑 Мои запросы", callback_data="my_alerts"))
+    markup.add(InlineKeyboardButton("📑 Активные запросы", callback_data="my_requests"))
     markup.insert(InlineKeyboardButton("➕ Создать запрос", callback_data="create_alert"))
     markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_menu"))
+    return markup
+
+
+def back_to_alerts_kb() -> InlineKeyboardMarkup:
+    """Создает клавиатуру для оповещений с опциями управления запросами."""
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("❓ Как это работает?", callback_data="faq"))
+    markup.add(InlineKeyboardButton("📑 Активные запросы", callback_data="my_requests"))
+    markup.insert(InlineKeyboardButton("➕ Создать запрос", callback_data="create_alert"))
     return markup
 
 
@@ -199,11 +208,39 @@ def notification_count_markup() -> InlineKeyboardMarkup:
     return markup
 
 
-def start_bot_markup(bot_name=None) -> InlineKeyboardMarkup:
+def go_booking() -> InlineKeyboardMarkup:
     """Создает клавиатуру для запуска бота."""
     markup = InlineKeyboardMarkup(row_width=1)
     buttons = [
-        InlineKeyboardButton(text="Перейти и запустить бот", url=f"https://t.me/{bot_name}")
+        InlineKeyboardButton(
+            text="🚀 Перейти к бронированию",
+            url="https://seller.wildberries.ru/supplies-management/all-supplies"
+        )
     ]
     markup.add(*buttons)
+    return markup
+
+
+def requests_keyboard(user_requests):
+    markup = InlineKeyboardMarkup()
+    for i, request in enumerate(user_requests, start=1):
+        warehouse_name = request.get('warehouse_name', 'Неизвестный склад')
+        date = request.get('date', 'Неизвестная дата')
+        button_text = f"{i}. {warehouse_name} | {date}"
+        callback_data = f"request_details_{i}"
+        markup.add(InlineKeyboardButton(button_text, callback_data=callback_data))
+    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_my_requests"))
+    return markup
+
+
+def back_btn(date) -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("⛔️ Завершить поиск", callback_data=f"stop_search_{date}"))
+    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_requst"))
+    return markup
+
+
+def back_btn2() -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_requst"))
     return markup

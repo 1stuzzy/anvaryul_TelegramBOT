@@ -1,4 +1,6 @@
 import aioredis
+import json
+from datetime import datetime
 from loguru import logger
 
 
@@ -11,37 +13,34 @@ class RedisClient:
         if not self.redis:
             self.redis = await aioredis.from_url(self.redis_url, decode_responses=True)
 
-    async def save_user_request(self, user_id, warehouse_ids, supply_types, boxTypeID, coefficient, period, status):
-        key = f"user_request:{user_id}"
+    async def save_user_request(self, user_id, warehouse_ids, supply_types, boxTypeID, coefficient, period, notify):
+        timestamp = datetime.utcnow().strftime('%d.%m.%Y.%H:%M')
+        key = f"user_request:{user_id}:{timestamp}"
 
-        warehouse_ids_str = ",".join(map(str, warehouse_ids))
-        supply_types_str = ",".join(supply_types)
+        warehouse_names = ",".join([await self.get_warehouse_name(wh_id) for wh_id in warehouse_ids])
 
         request_data = {
             "user_id": str(user_id),
-            "warehouse_ids": warehouse_ids_str,
-            "supply_types": supply_types_str,
+            "warehouse_ids": ",".join(map(str, warehouse_ids)),
+            "warehouse_name": warehouse_names,
+            "date": timestamp,
+            "supply_types": ",".join(supply_types),
             "boxTypeID": str(boxTypeID),
-            "coefficient": str(coefficient),
+            "coefficient": coefficient,
             "period": str(period),
-            "status": str(status),
+            "notify": str(notify),
         }
 
         try:
-            existing_request = await self.redis.hgetall(key)
-
-            if existing_request:
-                existing_request_str = {k.decode('utf-8'): v.decode('utf-8') for k, v in existing_request.items()}
-                if existing_request_str == request_data:
-                    logger.info(f"Запрос пользователя {user_id} уже существует, повторное сохранение не требуется.")
-                    return
-
             await self.redis.hmset(key, mapping=request_data)
-            logger.info(f"Запрос пользователя {user_id} успешно сохранен в Redis.")
+            logger.info(f"Запрос пользователя {user_id} успешно сохранен в Redis с ключом {key}.")
         except Exception as e:
             logger.exception(f"Ошибка при сохранении запроса пользователя {user_id} в Redis: {e}")
 
-
+    async def get_warehouse_name(self, warehouse_id):
+        """Получает имя склада по его идентификатору."""
+        warehouse = await self.get_warehouse_by_id(warehouse_id)
+        return warehouse.get('name', 'Неизвестный склад')
 
     async def get_user_requests(self):
         try:
@@ -112,3 +111,38 @@ class RedisClient:
             logger.info("Складские центры успешно сохранены в Redis.")
         except Exception as e:
             logger.exception(f"Ошибка при сохранении складских центров в Redis: {e}")
+
+    async def get_user(self, user_id):
+        try:
+            keys_pattern = f"user_request:{user_id}:*"
+            keys = await self.redis.keys(keys_pattern)
+
+            user_requests = []
+            for key in keys:
+                request_data = await self.redis.hgetall(key)
+                if request_data:
+                    user_requests.append(request_data)
+
+            return user_requests
+        except Exception as e:
+            logger.exception(f"Ошибка при извлечении запросов пользователя {user_id}: {e}")
+            return []
+
+    async def delete_user_request(self, user_id: int, timestamp: str):
+        try:
+            # Ключ для хранения запроса
+            request_key = f"user_request:{user_id}:{timestamp}"
+
+            # Попытка удалить ключ из Redis
+            result = await self.redis.delete(request_key)
+
+            if result == 1:
+                logger.info(f"Запрос успешно удален для пользователя: {user_id} с временной меткой: {timestamp}")
+                return True
+            else:
+                logger.error(f"Запрос не найден для пользователя: {user_id} с временной меткой: {timestamp}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Ошибка при удалении запроса для пользователя {user_id} с временной меткой {timestamp}: {e}")
+            return False

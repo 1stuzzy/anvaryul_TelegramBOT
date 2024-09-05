@@ -14,7 +14,9 @@ class DatabaseConfig(BaseModel):
 class Config(BaseModel):
     db: DatabaseConfig
     api_token: str
-    api_key: str
+    base_url: str
+    default_key: str
+    api_key: List[str]
     admins_id: List[int]
     admins_chat: int
     time_zone: str = "Europe/Moscow"

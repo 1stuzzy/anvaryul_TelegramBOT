@@ -36,6 +36,7 @@ async def on_startup(dispatcher: Dispatcher):
 
     notification_service = NotificationService(api_client=api_client,
                                                redis_client=redis_client,
+                                               tokens=config.api_key,
                                                bot=dispatcher.bot)
     asyncio.create_task(notification_service.check_and_notify_users())
 

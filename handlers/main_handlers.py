@@ -3,12 +3,13 @@ from aiogram import types
 from aiogram.utils.exceptions import MessageNotModified
 from aiogram.dispatcher.filters import Text
 from aiogram.dispatcher import FSMContext
+from html import escape
 from loguru import logger
 from data.texts import *
 from data.keyboards.main_kbs import (main_keyboard, menu_keyboard, alerts_keyboard, type_alert,
                                      warehouse_markup, update_markup, supply_types_markup,
                                      acceptance_coefficient_markup, notification_count_markup,
-                                     start_bot_markup, period_selection_markup)
+                                     period_selection_markup, requests_keyboard, back_to_alerts_kb, back_btn, back_btn2)
 
 
 @dp.message_handler(commands=['start'], state='*')
@@ -165,69 +166,157 @@ async def process_notification_count_selection(query: types.CallbackQuery, state
     try:
         user_data = await state.get_data()
 
+        # Извлекаем данные из состояния
         warehouse_ids = user_data.get("selected_warehouses", [])
         supply_types = user_data.get("selected_supply_types", [])
         coefficient = user_data.get("coefficient", "")
 
-        if coefficient.startswith("<"):
-            coefficient_value = float(coefficient[1:])  # Извлекаем число после '<'
-            coefficient_range = f"<{coefficient_value}"  # Сохраняем как <value для диапазона
-        else:
-            coefficient_value = float(coefficient)  # Если не <, то просто сохраняем число
-            coefficient_range = str(coefficient_value)
+        # Форматируем коэффициент
+        coefficient_range = coefficient if not coefficient.startswith("<") else f"<{float(coefficient[1:])}"
 
-        supply_name_map = {
-            "mono_pallets": 5,
-            "boxes": 2,
-            "super_safe": 6,
-            "qr_supply": 7
-        }
+        # Формируем строку с названиями типов поставок
+        supply_types_names = ', '.join(SUPPLY_TYPE_RUS_MAP.get(st, st) for st in supply_types)
 
-        boxTypeIDs = [supply_name_map.get(supply_type) for supply_type in supply_types if supply_type in supply_name_map]
+        # Карта периодов и их преобразование
+        period_map = {"Сегодня": 1, "Завтра": 2, "3 дня": 3, "Неделя": 7, "Месяц": 30}
+        period = user_data.get("period", "Неизвестный период")
 
-        period_map = {
-            "Сегодня": 1,
-            "Завтра": 2,
-            "3 дня": 3,
-            "Неделя": 7,
-            "Месяц": 30
-        }
-
+        # Получение названий складов
         warehouse_names = []
-        for warehouse_id in warehouse_ids:
-            warehouse = await redis_client.get_warehouse_by_id(warehouse_id)
-            warehouse_names.append(warehouse['name'])
+        for wh_id in warehouse_ids:
+            warehouse = await redis_client.get_warehouse_by_id(wh_id)
+            if warehouse:
+                warehouse_names.append(warehouse.get('name', ''))
 
-        supply_types_names = ', '.join(supply_type for supply_type in supply_types)
+        warehouse_names = ', '.join(warehouse_names)
 
-        period = period_map.get(user_data.get("period", "Неизвестный период"))
-
+        # Определение типа уведомлений
         notification_type = 0 if query.data == "notify_once" else 1
 
-        for boxTypeID in boxTypeIDs:
-            await redis_client.save_user_request(
-                user_id=query.from_user.id,
-                warehouse_ids=warehouse_ids,
-                supply_types=supply_types,
-                boxTypeID=boxTypeID,
-                coefficient=coefficient_range,  # Сохраняем диапазон коэффициента
-                period=period,
-                status=notification_type  # Добавляем статус уведомления (0 или 1)
-            )
+        # Объединяем все boxTypeID для типов поставок
+        boxTypeIDs = [SUPPLY_NUM_MAP.get(st) for st in supply_types if st in SUPPLY_TYPE_RUS_MAP]
 
-        final_text = FINAL_NOTIFICATION_TEXT.format(
-            warehouse_names=', '.join(warehouse_names),
-            period=user_data.get('period', ''),
-            supply_types_names=supply_types_names,
-            coefficient=coefficient
+        # Сохраняем запрос только один раз с объединенными данными
+        await redis_client.save_user_request(
+            user_id=query.from_user.id,
+            warehouse_ids=warehouse_ids,
+            supply_types=supply_types,
+            boxTypeID=','.join(boxTypeIDs),
+            coefficient=coefficient_range,
+            period=period,
+            notify=notification_type
         )
 
-        bot_me = await dp.bot.get_me()
-        await query.message.edit_text(final_text, reply_markup=start_bot_markup(bot_me.username), parse_mode="HTML")
+        final_text = FINAL_NOTIFICATION_TEXT.format(
+            warehouse_names=escape(warehouse_names),
+            period=escape(period),
+            supply_types_names=escape(supply_types_names),
+            coefficient=escape(coefficient_range)
+        )
+
+        await query.message.edit_text(final_text, parse_mode="HTML")
 
     except Exception as e:
         logger.error(f"Ошибка при сохранении запроса пользователя в Redis: {e}")
         await query.message.answer("Произошла ошибка при сохранении вашего запроса. Пожалуйста, попробуйте позже.")
 
+
+@dp.callback_query_handler(lambda call: call.data == "my_requests")
+async def handle_my_alerts(query: types.CallbackQuery, state: FSMContext):
+    redis_client = query.bot.get('redis_client')
+    user_id = query.from_user.id
+
+    try:
+        user_requests = await redis_client.get_user(user_id)
+
+        if not user_requests:
+            await query.message.edit_text("У вас нет активных запросов.", reply_markup=alerts_keyboard())
+            return
+
+        await query.message.edit_text("Ваши активные запросы:", reply_markup=requests_keyboard(user_requests))
+
+    except Exception:
+        await query.message.edit_text("<b>🔔 Оповещения:</b>\n\n"
+                                      "<i>Получайте первыми уведомления о бесплатных слотах на складах Wildberries</i>",
+                                      reply_markup=back_to_alerts_kb())
+
+
+@dp.callback_query_handler(lambda call: call.data.startswith("request_details_"))
+async def handle_request_details(query: types.CallbackQuery, state: FSMContext):
+    redis_client = query.bot.get('redis_client')
+    user_id = query.from_user.id
+
+    try:
+        request_index = int(query.data.split('_')[2]) - 1
+
+        # Check for valid index
+        if request_index < 0:
+            await query.message.edit_text("Некорректный запрос. Попробуйте позже.", reply_markup=alerts_keyboard())
+            return
+
+        user_requests = await redis_client.get_user(user_id)
+
+        if 0 <= request_index < len(user_requests):
+            request = user_requests[request_index]
+
+            warehouse_name = request.get('warehouse_name', 'Неизвестный склад')
+            date = request.get('date', 'Неизвестная дата')
+            supply_types = ', '.join(SUPPLY_TYPE_RUS_MAP.get(st, st) for st in request.get('supply_types', '').split(','))
+            coefficient = request.get('coefficient', 'Неизвестный коэффициент')
+            period = request.get('period', 'Неизвестный период')
+            notify_id = request.get('notify', 'Неизвестный статус')
+            notify = "Уведомления без ограничения" if notify_id == 0 else "До первого уведомления"
+
+            details_text = (
+                f"<b>📋 Запрос №{request_index + 1}:\n\n"
+                f"🔹 Склад: <i>{warehouse_name}</i>\n"
+                f"🔹 Дата: <i>{date}</i>\n"
+                f"🔹 Тип поставки: <i>{supply_types}</i>\n"
+                f"🔹 Коэффициент: <i>{coefficient}</i>\n"
+                f"🔹 Период: <i>{period}</i>\n"
+                f"🔹 Уведомления: <i>{notify}</i></b>\n"
+            )
+
+            await query.message.edit_text(details_text, reply_markup=back_btn(date))
+        else:
+            await query.message.edit_text("Запрос не найден.", reply_markup=alerts_keyboard())
+
+    except Exception as e:
+        logger.error(f"Ошибка при получении подробной информации о запросе: {e}")
+        await query.message.edit_text("Произошла ошибка при получении подробной информации. Попробуйте позже.",
+                                      reply_markup=alerts_keyboard())
+
+
+@dp.callback_query_handler(lambda call: call.data == "back_to_my_requests")
+async def handle_back_to_my_requests(query: types.CallbackQuery, state: FSMContext):
+    await handle_my_alerts(query, state)
+
+
+@dp.callback_query_handler(lambda call: call.data == "back_to_requst")
+async def handle_back_to_my_requests(query: types.CallbackQuery, state: FSMContext):
+    await handle_my_alerts(query, state)
+
+
+@dp.callback_query_handler(lambda call: call.data.startswith("stop_search_"))
+async def handle_stop_search(query: types.CallbackQuery, state: FSMContext):
+    redis_client = query.bot.get('redis_client')
+    user_id = query.from_user.id
+
+    try:
+        # Получаем дату из callback_data
+        timestamp = query.data.split('_')[2]
+
+        updated = await redis_client.delete_user_request(user_id, timestamp)
+
+        if updated:
+            await query.answer("Поиск успешно завершен.")
+            await query.message.edit_reply_markup(reply_markup=back_btn2())
+        else:
+            await query.message.edit_text("Не удалось завершить поиск. Попробуйте позже.", reply_markup=alerts_keyboard())
+
+    except Exception as e:
+        logger.error(f"Ошибка при завершении поиска: {e}")
+        await query.message.edit_text("Произошла ошибка при завершении поиска. Попробуйте позже.",
+                                      reply_markup=alerts_keyboard())
 
 
