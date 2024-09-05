@@ -7,19 +7,25 @@ from loguru import logger
 def main_keyboard():
     """Создает основную клавиатуру с кнопкой оповещений."""
     markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    alert_btn = KeyboardButton("🔔 Оповещения")
-    markup.add(alert_btn)
+    main_btn = KeyboardButton("💠 Главное меню")
+    support_btn = KeyboardButton("👨‍💻 Техническая поддержка")
+    markup.add(main_btn)
+    markup.add(support_btn)
     return markup
 
 
 def menu_keyboard():
     """Создает клавиатуру меню с кнопками оповещений и FAQ."""
     markup = InlineKeyboardMarkup(row_width=2)
-    buttons = [
-        InlineKeyboardButton(text="🔔 Оповещения", callback_data="alerts"),
-        InlineKeyboardButton(text="❓ FAQ", callback_data="faq"),
-    ]
-    markup.add(*buttons)
+    markup.add(InlineKeyboardButton("❓ Как это работает?", callback_data="faq"))
+    markup.add(InlineKeyboardButton("📑 Активные запросы", callback_data="my_requests"))
+    markup.insert(InlineKeyboardButton("➕ Создать запрос", callback_data="create_alert"))
+    return markup
+
+
+def support_keyboard(support):
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("📩 Написать сообщение", url=f"t.me/{support}"))
     return markup
 
 
@@ -29,7 +35,6 @@ def alerts_keyboard() -> InlineKeyboardMarkup:
     markup.add(InlineKeyboardButton("❓ Как это работает?", callback_data="faq"))
     markup.add(InlineKeyboardButton("📑 Активные запросы", callback_data="my_requests"))
     markup.insert(InlineKeyboardButton("➕ Создать запрос", callback_data="create_alert"))
-    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_menu"))
     return markup
 
 
@@ -99,12 +104,14 @@ async def warehouse_markup(redis_client, selected_warehouses=None, page=0) -> In
         markup.row(*navigation_buttons)
 
     if selected_warehouses:
-        markup.add(InlineKeyboardButton("Продолжить ▶️", callback_data="continue"))
-
-    markup.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="go_back"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
-    )
+        markup.row(
+            InlineKeyboardButton("Продолжить ▶️", callback_data="continue"),
+            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
+        )
+    else:
+        markup.row(
+            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
+        )
 
     return markup
 
@@ -144,10 +151,13 @@ def supply_types_markup(selected_supply_types=None):
         markup.insert(InlineKeyboardButton(text=button_text, callback_data=callback_data))
 
     if selected_supply_types:
-        markup.add(InlineKeyboardButton("Продолжить ▶️", callback_data="continue_supply"))
-
-    markup.row(InlineKeyboardButton(text="↩️ Назад", callback_data="go_back"),
-               InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
+        markup.row(
+            InlineKeyboardButton("Продолжить ▶️", callback_data="continue_supply"),
+            InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
+        )
+    else:
+        # Если нет выбранных типов поставок, просто добавляем кнопку "Отмена"
+        markup.insert(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
 
     return markup
 
@@ -169,7 +179,6 @@ def acceptance_coefficient_markup():
     markup.add(buttons[0], buttons[1], buttons[2], buttons[3])
     markup.add(buttons[4], buttons[5], buttons[6], buttons[7])
     markup.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="go_back"),
         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
     )
     return markup
@@ -187,7 +196,6 @@ def period_selection_markup():
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(*buttons)
     markup.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="go_back"),
         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
     )
     return markup
@@ -202,7 +210,6 @@ def notification_count_markup() -> InlineKeyboardMarkup:
     ]
     markup.add(*buttons)
     markup.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="go_back"),
         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
     )
     return markup
@@ -243,4 +250,10 @@ def back_btn(date) -> InlineKeyboardMarkup:
 def back_btn2() -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_requst"))
+    return markup
+
+
+def back_btn3() -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_menu"))
     return markup

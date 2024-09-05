@@ -130,10 +130,7 @@ class RedisClient:
 
     async def delete_user_request(self, user_id: int, timestamp: str):
         try:
-            # Ключ для хранения запроса
             request_key = f"user_request:{user_id}:{timestamp}"
-
-            # Попытка удалить ключ из Redis
             result = await self.redis.delete(request_key)
 
             if result == 1:

@@ -7,8 +7,8 @@ class ApiClient:
     def __init__(self, api_key):
         self.api_key = api_key
         self.current_token_index = 0
-        self.max_retries = len(api_key) * 2  # Ограничение на количество попыток
-        self.retry_delay = 5  # Задержка перед повторной попыткой (в секундах)
+        self.max_retries = len(api_key) * 2
+        self.retry_delay = 5
 
     def get_current_token(self):
         return self.api_key[self.current_token_index]
@@ -28,10 +28,9 @@ class ApiClient:
                         if response.status == 200:
                             return await response.json()
                         elif response.status == 429:
-                            logger.warning(f"Превышен лимит запросов, попытка {attempt + 1} из {self.max_retries}. Переключение токена.")
                             self.switch_token()
                             attempt += 1
-                            await asyncio.sleep(self.retry_delay)  # Увеличенная задержка перед повторной попыткой
+                            await asyncio.sleep(self.retry_delay)
                         elif response.status == 401:
                             logger.warning("Ошибка авторизации, переключение токена.")
                             self.switch_token()
@@ -57,9 +56,8 @@ class ApiClient:
                         if response.status == 200:
                             return await response.json()
                         elif response.status == 429:
-                            logger.warning("Превышен лимит запросов, переключение токена.")
                             self.switch_token()
-                            await asyncio.sleep(1)  # Задержка перед повторной попыткой
+                            await asyncio.sleep(1)
                         elif response.status == 401:
                             logger.warning("Ошибка авторизации, переключение токена.")
                             self.switch_token()
@@ -83,9 +81,8 @@ class ApiClient:
                         response_data = await response.json()
                         return response_data.get("coefficient")
                     elif response.status == 429:
-                        logger.warning("Превышен лимит запросов, переключение токена.")
                         self.switch_token()
-                        await asyncio.sleep(1)  # Задержка перед повторной попыткой
+                        await asyncio.sleep(1)
                     elif response.status == 401:
                         logger.warning("Ошибка авторизации, переключение токена.")
                         self.switch_token()

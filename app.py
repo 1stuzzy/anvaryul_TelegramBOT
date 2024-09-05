@@ -32,7 +32,7 @@ async def on_startup(dispatcher: Dispatcher):
 
     api_client = ApiClient(api_key=config.api_key)
 
-    await RedisClient.upload_warehouses(api_client, redis_client)
+    #await RedisClient.upload_warehouses(api_client, redis_client)
 
     notification_service = NotificationService(api_client=api_client,
                                                redis_client=redis_client,

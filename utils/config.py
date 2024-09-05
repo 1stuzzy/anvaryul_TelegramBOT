@@ -19,6 +19,7 @@ class Config(BaseModel):
     api_key: List[str]
     admins_id: List[int]
     admins_chat: int
+    support: str
     time_zone: str = "Europe/Moscow"
     skip_updates: bool = True
     notify: bool = True
