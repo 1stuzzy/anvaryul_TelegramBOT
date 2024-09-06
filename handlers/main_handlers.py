@@ -300,8 +300,8 @@ async def handle_request_details(query: types.CallbackQuery, state: FSMContext):
             supply_types = ', '.join(SUPPLY_TYPE_RUS_MAP.get(st, st) for st in request.get('supply_types', '').split(','))
             coefficient = request.get('coefficient', 'Неизвестный коэффициент')
             period = request.get('period', 'Неизвестный период')
-            notify_id = request.get('notify', 'Неизвестный статус')
-            notify = "Уведомления без ограничения" if notify_id == 0 else "До первого уведомления"
+            notify_id = int(request.get('notify', 'Неизвестный статус'))
+            notify = "Уведомления без ограничения" if notify_id == 1 else "До первого уведомления"
 
             details_text = (
                 f"<b>📋 Запрос №{request_index + 1}:\n\n"
