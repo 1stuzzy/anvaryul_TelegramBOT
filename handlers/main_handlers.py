@@ -237,7 +237,8 @@ async def process_notification_count_selection(query: types.CallbackQuery, state
             boxTypeID=','.join(boxTypeIDs),
             coefficient=coefficient_range,
             period=period,
-            notify=notification_type
+            notify=notification_type,
+            status_request=True
         )
 
         if coefficient_range.startswith('<') and coefficient_range != "0":
@@ -287,7 +288,7 @@ async def handle_request_details(query: types.CallbackQuery, state: FSMContext):
         request_index = int(query.data.split('_')[2]) - 1
 
         if request_index < 0:
-            await query.message.edit_text("Некорректный запрос. Попробуйте позже.", reply_markup=alerts_keyboard())
+            await query.answer("Некорректный запрос. Попробуйте позже.")
             return
 
         user_requests = await redis_client.get_user(user_id)
@@ -302,6 +303,7 @@ async def handle_request_details(query: types.CallbackQuery, state: FSMContext):
             period = request.get('period', 'Неизвестный период')
             notify_id = int(request.get('notify', 'Неизвестный статус'))
             notify = "Уведомления без ограничения" if notify_id == 1 else "До первого уведомления"
+            status_request = request.get('status_request')
 
             details_text = (
                 f"<b>📋 Запрос №{request_index + 1}:\n\n"
@@ -313,14 +315,14 @@ async def handle_request_details(query: types.CallbackQuery, state: FSMContext):
                 f"🔹 Уведомления: <i>{notify}</i></b>\n"
             )
 
-            await query.message.edit_text(details_text, reply_markup=back_btn(date))
+            await query.message.edit_text(details_text, reply_markup=back_btn(date, status_request))
         else:
-            await query.message.edit_text("Запрос не найден.", reply_markup=alerts_keyboard())
+            await query.answer("Запрос не найден.")
 
     except Exception as e:
         logger.error(f"Ошибка при получении подробной информации о запросе: {e}")
-        await query.message.edit_text("Произошла ошибка при получении подробной информации. Попробуйте позже.",
-                                      reply_markup=alerts_keyboard())
+        await query.answer("Произошла ошибка при получении подробной информации. Попробуйте позже.")
+
 
 
 @dp.callback_query_handler(lambda call: call.data == "back_to_my_requests")
@@ -328,7 +330,7 @@ async def handle_back_to_my_requests(query: types.CallbackQuery, state: FSMConte
     await handle_my_alerts(query, state)
 
 
-@dp.callback_query_handler(lambda call: call.data == "back_to_requst")
+@dp.callback_query_handler(lambda call: call.data == "back_to_request")
 async def handle_back_to_my_requests(query: types.CallbackQuery, state: FSMContext):
     await handle_my_alerts(query, state)
 
@@ -341,17 +343,35 @@ async def handle_stop_search(query: types.CallbackQuery, state: FSMContext):
     try:
         timestamp = query.data.split('_')[2]
 
-        updated = await redis_client.delete_user_request(user_id, timestamp)
+        # Попытка получить данные запроса из Redis
+        request_key = f"user_request:{user_id}:{timestamp}"
+        request_data = await redis_client.redis.hgetall(request_key)
+
+        if not request_data:
+            await query.message.edit_text("Запрос не найден.", reply_markup=alerts_keyboard())
+            return
+
+        # Проверка текущего статуса запроса
+        status_request = request_data.get('status_request', 'false')
+
+        if status_request == 'false':
+            await query.answer("Поиск уже был завершен.")
+            return
+
+        # Обновление статуса запроса на 'false' в Redis
+        updated = await redis_client.stop_user_request(user_id, timestamp)
 
         if updated:
             await query.answer("Поиск успешно завершен.")
-            await query.message.edit_reply_markup(reply_markup=back_btn2())
+            await query.message.edit_reply_markup(reply_markup=back_btn(timestamp, 'false'))
         else:
-            await query.message.edit_text("Не удалось завершить поиск. Попробуйте позже.", reply_markup=alerts_keyboard())
-
+            await query.answer("Не удалось завершить поиск. Попробуйте позже.")
+    
     except Exception as e:
         logger.error(f"Ошибка при завершении поиска: {e}")
         await query.message.edit_text("Произошла ошибка при завершении поиска. Попробуйте позже.",
                                       reply_markup=alerts_keyboard())
+
+
 
 
