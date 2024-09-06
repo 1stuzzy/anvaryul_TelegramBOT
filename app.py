@@ -2,7 +2,7 @@ import asyncio
 from aiogram import Dispatcher, executor
 from loader import config, dp
 from loguru import logger
-from data.redis_base import RedisClient
+from db.redis_base import RedisClient
 from functions.task_notify import NotificationService
 from functions.wb_api import ApiClient
 
@@ -32,7 +32,7 @@ async def on_startup(dispatcher: Dispatcher):
 
     api_client = ApiClient(api_key=config.api_key)
 
-    #await RedisClient.upload_warehouses(api_client, redis_client)
+    await RedisClient.upload_warehouses(api_client, redis_client)
 
     notification_service = NotificationService(api_client=api_client,
                                                redis_client=redis_client,
