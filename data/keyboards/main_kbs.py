@@ -2,6 +2,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardBut
 from aiogram.utils.exceptions import MessageNotModified
 from aiogram import types
 from loguru import logger
+from data.texts import SELECT_WAREHOUSE_TEXT
 
 
 def main_keyboard():
@@ -122,7 +123,7 @@ async def update_markup(message: types.Message, markup: InlineKeyboardMarkup):
         await message.edit_reply_markup(reply_markup=markup)
     except MessageNotModified:
         await message.delete()
-        await message.answer("Обновлено:", reply_markup=markup)
+        await message.answer(SELECT_WAREHOUSE_TEXT, reply_markup=markup)
     except Exception:
         return None
 
@@ -227,23 +228,35 @@ def go_booking() -> InlineKeyboardMarkup:
     markup.add(*buttons)
     return markup
 
-
 def requests_keyboard(user_requests):
     markup = InlineKeyboardMarkup()
     for i, request in enumerate(user_requests, start=1):
         warehouse_name = request.get('warehouse_name', 'Неизвестный склад')
         date = request.get('date', 'Неизвестная дата')
-        button_text = f"{i}. {warehouse_name} | {date}"
+
+        # Проверка статуса запроса и установка соответствующего символа
+        status_request = request.get('status_request', 'False').lower()
+        status_symbol = "🟢" if status_request == 'true' else "🔴"
+
+        # Формирование текста кнопки с добавлением статуса
+        button_text = f"{status_symbol} {i}. {warehouse_name} | {date}"
         callback_data = f"request_details_{i}"
         markup.add(InlineKeyboardButton(button_text, callback_data=callback_data))
+
+    # Добавление кнопки "Назад"
     markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_my_requests"))
     return markup
 
 
-def back_btn(date) -> InlineKeyboardMarkup:
+def back_btn(date, status_request) -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("⛔️ Завершить поиск", callback_data=f"stop_search_{date}"))
-    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_requst"))
+    
+    # Проверка статуса запроса
+    if status_request.lower() == 'true':
+        markup.add(InlineKeyboardButton("⛔️ Завершить поиск", callback_data=f"stop_search_{date}"))
+    
+    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_request"))
+    
     return markup
 
 
