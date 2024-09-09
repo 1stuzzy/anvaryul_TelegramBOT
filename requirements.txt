@@ -1,0 +1,5 @@
+aiogram==2.25.2
+aioredis==2.0.1
+pydantic
+loguru
+celery

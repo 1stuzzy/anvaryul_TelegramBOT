@@ -1,3 +1,4 @@
+import random
 from loader import dp, config
 from aiogram import types
 from aiogram.utils.exceptions import MessageNotModified
@@ -6,17 +7,48 @@ from aiogram.dispatcher import FSMContext
 from html import escape
 from loguru import logger
 from data.texts import *
+from db import basefunctional
+from db.models import User
 from data.keyboards.main_kbs import (main_keyboard, menu_keyboard, alerts_keyboard, type_alert,
                                      warehouse_markup, update_markup, supply_types_markup,
                                      acceptance_coefficient_markup, notification_count_markup,
                                      period_selection_markup, requests_keyboard, back_to_alerts_kb, back_btn, back_btn2,
-                                     support_keyboard, back_btn3)
+                                     support_keyboard, back_btn3, subscribe_kb, subscribe_duration_keyboard)
+from functions.freekassa_api import FreeKassaApi
 
+freekassa_api = FreeKassaApi(
+    merchant_id=123123,
+    first_secret=123123,
+    second_secret=123123,
+    wallet_id=123123,
+    wallet_api_key=config.freekassa_token
+)
 
 @dp.message_handler(Text(equals="💠 Главное меню"), state='*')
 @dp.message_handler(commands=['start'], state='*')
 async def send_welcome(message: types.Message, state: FSMContext):
     await state.finish()
+    
+    user_id = message.from_user.id
+    name = message.from_user.full_name
+    username = message.from_user.username
+    
+    try:
+        logger.debug(f"[{user_id}:{name}], in base info updated")
+        user = User.get(User.user_id == user_id)
+        if user.name != name or user.username != username:
+            user.name = name
+            user.username = username
+            user.save()
+
+    except User.DoesNotExist:
+        logger.debug(f"[{user_id}:{name}], first time /start to bot")           
+        await basefunctional.create_user(
+            user_id=user_id,
+            name=name,
+            username=username
+        )
+
     await message.answer_sticker(START_TEXT, reply_markup=main_keyboard())
     await message.answer(ALERTS_TEXT, reply_markup=menu_keyboard())
 
@@ -34,37 +66,82 @@ async def process_faq(query, state=FSMContext):
     await query.message.edit_text(FAQ_TEXT, reply_markup=back_btn3())
 
 
-@dp.callback_query_handler(lambda call: call.data == 'alerts')
-async def process_alerts(query, state=FSMContext):
+@dp.callback_query_handler(lambda call: call.data == 'subscribe' or call.data == 'not_subscribe')
+async def process_subscribe(query: types.CallbackQuery, state: FSMContext):
     await state.finish()
-    chat_id, message_id = (query.chat.id,
-                           query.message_id) if isinstance(query, types.Message) else (query.message.chat.id,
-                                                                                       query.message.message_id)
-    await dp.bot.send_message(chat_id, ALERTS_TEXT, reply_markup=alerts_keyboard())
+    if query.data == 'subscribe':
+        await query.message.edit_text(SUBSCRIBE_TEXT, reply_markup=subscribe_kb())
+    else:
+        await query.answer("⚠️ Для доступа к этому разделу вам необходимо оформить подписку.", show_alert=True)
+        await query.message.edit_text(SUBSCRIBE_TEXT, 
+                                      reply_markup=subscribe_kb())
 
 
-@dp.callback_query_handler(lambda call: call.data == 'create_alert')
-async def process_create_alert(query: types.CallbackQuery):
-    await dp.bot.answer_callback_query(query.id)
+@dp.callback_query_handler(lambda call: call.data == 'go_to_subscribe', state='*')
+async def process_subscription(query: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+    await query.message.edit_text("Выберите срок подписки:", reply_markup=subscribe_duration_keyboard())
+
+# Обработчик для выбора срока подписки
+@dp.callback_query_handler(Text(startswith="subscribe_"), state='*')
+async def handle_subscription_duration(query: types.CallbackQuery, state: FSMContext):
+    await state.finish()
+
+    duration = query.data.split('_')[1]  # Получаем выбранный срок
+
+    # Генерация рандомного order_id
+    order_id = random.randint(100000, 999999)  # Генерация случайного числа от 100000 до 999999
+
+    # Определяем стоимость в зависимости от выбранного срока
+    if duration == "1day":
+        amount = 237.0
+        description = "Подписка на 1 день"
+    elif duration == "3days":
+        amount = 237.0 * 3
+        description = "Подписка на 3 дня"
+    elif duration == "week":
+        amount = 237.0 * 7
+        description = "Подписка на неделю"
+    elif duration == "month":
+        amount = 237.0 * 30
+        description = "Подписка на месяц"
+    else:
+        await query.message.edit_text("Неверный срок подписки.")
+        return
+
+    # Генерация ссылки на оплату
+    payment_link = freekassa_api.generate_payment_link(
+        order_id=order_id,  # Используем сгенерированный случайный order_id
+        summ=amount,
+        description=description
+    )
+
+    # Отправка ссылки пользователю
+    await query.message.edit_text(
+        f"Для оплаты подписки на выбранный срок перейдите по ссылке: [Оплатить]({payment_link})",
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
+
+
+@dp.callback_query_handler(lambda call: call.data == 'create_alert', state='*')
+async def process_create_alert(query: types.CallbackQuery, state=FSMContext):
+    redis_client = query.bot.get('redis_client')
+    await state.reset_state(with_data=True)
+
+    await state.update_data(selected_warehouses=[])
+
+    is_subscribed = await basefunctional.check_subscription(query.from_user.id)
+
     try:
-        await query.message.edit_text(CREATE_ALERT_TEXT, reply_markup=type_alert())
-    except MessageNotModified:
-        pass
-
-
-@dp.callback_query_handler(lambda call: call.data in ['default_alert', 'premium_alert'], state='*')
-async def process_default_alert(query: types.CallbackQuery, state: FSMContext):
-    if query.data == 'default_alert':
-        redis_client = query.bot.get('redis_client')
-        await state.reset_state(with_data=True)
-
-        await state.update_data(selected_warehouses=[])
-
-        try:
+        if is_subscribed:
             markup = await warehouse_markup(redis_client, [])
             await query.message.edit_text(SELECT_WAREHOUSE_TEXT, reply_markup=markup)
-        except MessageNotModified:
-            pass
+        else:
+            await process_subscribe(query, state)
+
+    except MessageNotModified:
+        pass
 
     if query.data == 'premium_alert':
         await query.answer('🛠 В разработке...')

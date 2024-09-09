@@ -1,5 +1,7 @@
 import aiohttp
 import asyncio
+import ssl
+import certifi
 from loguru import logger
 
 
@@ -11,12 +13,15 @@ class ApiClient:
         self.retry_delay = 5
 
     def get_current_token(self):
+        logger.debug(f"Используется токен с индексом {self.current_token_index}")
         return self.api_key[self.current_token_index]
 
     def switch_token(self):
         self.current_token_index = (self.current_token_index + 1) % len(self.api_key)
+        logger.debug(f"Переключение на токен с индексом {self.current_token_index}")
 
     async def get_coefficients(self, warehouse_ids):
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
         url = f"https://supplies-api.wildberries.ru/api/v1/acceptance/coefficients"
         attempt = 0
 
@@ -24,10 +29,11 @@ class ApiClient:
             while attempt < self.max_retries:
                 try:
                     headers = {"Authorization": f"Bearer {self.get_current_token()}"}
-                    async with session.get(url, params={"warehouse_ids": ",".join(warehouse_ids)}, headers=headers) as response:
+                    async with session.get(url, params={"warehouse_ids": ",".join(warehouse_ids)}, headers=headers, ssl=ssl_context) as response:
                         if response.status == 200:
                             return await response.json()
                         elif response.status == 429:
+                            logger.warning(f"Превышено количество запросов, переключение токена. Попытка {attempt + 1}")
                             self.switch_token()
                             attempt += 1
                             await asyncio.sleep(self.retry_delay)
@@ -46,16 +52,18 @@ class ApiClient:
         return None
 
     async def fetch_warehouses(self):
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
         url = 'https://supplies-api.wildberries.ru/api/v1/warehouses'
         headers = {"Authorization": f"Bearer {self.get_current_token()}"}
 
         async with aiohttp.ClientSession() as session:
             while True:
                 try:
-                    async with session.get(url, headers=headers) as response:
+                    async with session.get(url, headers=headers, ssl=ssl_context) as response:
                         if response.status == 200:
                             return await response.json()
                         elif response.status == 429:
+                            logger.warning("Превышено количество запросов, переключение токена.")
                             self.switch_token()
                             await asyncio.sleep(1)
                         elif response.status == 401:
@@ -81,6 +89,7 @@ class ApiClient:
                         response_data = await response.json()
                         return response_data.get("coefficient")
                     elif response.status == 429:
+                        logger.warning("Превышено количество запросов, переключение токена.")
                         self.switch_token()
                         await asyncio.sleep(1)
                     elif response.status == 401:

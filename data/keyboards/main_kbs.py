@@ -2,6 +2,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardBut
 from aiogram.utils.exceptions import MessageNotModified
 from aiogram import types
 from loguru import logger
+from data.texts import SELECT_WAREHOUSE_TEXT
 
 
 def main_keyboard():
@@ -18,6 +19,7 @@ def menu_keyboard():
     """Создает клавиатуру меню с кнопками оповещений и FAQ."""
     markup = InlineKeyboardMarkup(row_width=2)
     markup.add(InlineKeyboardButton("❓ Как это работает?", callback_data="faq"))
+    markup.add(InlineKeyboardButton("⭐️ Оформить подписку", callback_data="subscribe"))
     markup.add(InlineKeyboardButton("📑 Активные запросы", callback_data="my_requests"))
     markup.insert(InlineKeyboardButton("➕ Создать запрос", callback_data="create_alert"))
     return markup
@@ -33,6 +35,7 @@ def alerts_keyboard() -> InlineKeyboardMarkup:
     """Создает клавиатуру для оповещений с опциями управления запросами."""
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("❓ Как это работает?", callback_data="faq"))
+    markup.add(InlineKeyboardButton("⭐️ Оформить подписку", callback_data="subscribe"))
     markup.add(InlineKeyboardButton("📑 Активные запросы", callback_data="my_requests"))
     markup.insert(InlineKeyboardButton("➕ Создать запрос", callback_data="create_alert"))
     return markup
@@ -42,6 +45,7 @@ def back_to_alerts_kb() -> InlineKeyboardMarkup:
     """Создает клавиатуру для оповещений с опциями управления запросами."""
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("❓ Как это работает?", callback_data="faq"))
+    markup.add(InlineKeyboardButton("⭐️ Оформить подписку", callback_data="subscribe"))
     markup.add(InlineKeyboardButton("📑 Активные запросы", callback_data="my_requests"))
     markup.insert(InlineKeyboardButton("➕ Создать запрос", callback_data="create_alert"))
     return markup
@@ -51,7 +55,7 @@ def type_alert() -> InlineKeyboardMarkup:
     """Создает клавиатуру для выбора типа оповещений."""
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🔍 Поиск слотов", callback_data="default_alert"))
-    markup.add(InlineKeyboardButton("⭐️ Премиум поиск", callback_data="premium_alert"))
+    #markup.add(InlineKeyboardButton("⭐️ Премиум поиск", callback_data="premium_alert"))
     markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_menu"))
     return markup
 
@@ -77,7 +81,7 @@ async def warehouse_markup(redis_client, selected_warehouses=None, page=0) -> In
     selected_warehouses = [str(id) for id in (selected_warehouses or [])]
     warehouses = await redis_client.get_warehouses()
 
-    max_items_per_page = 16
+    max_items_per_page = 30
     total_warehouses = len(warehouses)
     total_pages = (total_warehouses + max_items_per_page - 1) // max_items_per_page
 
@@ -93,15 +97,6 @@ async def warehouse_markup(redis_client, selected_warehouses=None, page=0) -> In
 
         if len(callback_data) <= 64:
             markup.insert(InlineKeyboardButton(text, callback_data=callback_data))
-
-    navigation_buttons = []
-    if page > 0:
-        navigation_buttons.append(InlineKeyboardButton("⬅️", callback_data=f"page_back_{page-1}"))
-    if page < total_pages - 1:
-        navigation_buttons.append(InlineKeyboardButton("➡️", callback_data=f"page_forward_{page+1}"))
-
-    if navigation_buttons:
-        markup.row(*navigation_buttons)
 
     if selected_warehouses:
         markup.row(
@@ -122,7 +117,7 @@ async def update_markup(message: types.Message, markup: InlineKeyboardMarkup):
         await message.edit_reply_markup(reply_markup=markup)
     except MessageNotModified:
         await message.delete()
-        await message.answer("Обновлено:", reply_markup=markup)
+        await message.answer(SELECT_WAREHOUSE_TEXT, reply_markup=markup)
     except Exception:
         return None
 
@@ -135,7 +130,6 @@ def supply_types_markup(selected_supply_types=None):
         ("Короба", "boxes"),
         ("Монопаллеты", "mono_pallets"),
         ("Суперсейф", "super_safe"),
-        ("QR-Поставка", "qr_supply")
     ]
 
     markup = InlineKeyboardMarkup(row_width=2)
@@ -156,7 +150,6 @@ def supply_types_markup(selected_supply_types=None):
             InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
         )
     else:
-        # Если нет выбранных типов поставок, просто добавляем кнопку "Отмена"
         markup.insert(InlineKeyboardButton(text="❌ Отмена", callback_data="cancel"))
 
     return markup
@@ -233,17 +226,27 @@ def requests_keyboard(user_requests):
     for i, request in enumerate(user_requests, start=1):
         warehouse_name = request.get('warehouse_name', 'Неизвестный склад')
         date = request.get('date', 'Неизвестная дата')
-        button_text = f"{i}. {warehouse_name} | {date}"
+
+        status_request = request.get('status_request', 'False').lower()
+        status_symbol = "🟢" if status_request == 'true' else "🔴"
+
+        button_text = f"{status_symbol} {i}. {warehouse_name} | {date}"
         callback_data = f"request_details_{i}"
         markup.add(InlineKeyboardButton(button_text, callback_data=callback_data))
+
     markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_my_requests"))
     return markup
 
 
-def back_btn(date) -> InlineKeyboardMarkup:
+def back_btn(date, status_request) -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("⛔️ Завершить поиск", callback_data=f"stop_search_{date}"))
-    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_requst"))
+    
+    # Проверка статуса запроса
+    if status_request.lower() == 'true':
+        markup.add(InlineKeyboardButton("⛔️ Завершить поиск", callback_data=f"stop_search_{date}"))
+    
+    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_to_request"))
+    
     return markup
 
 
@@ -257,3 +260,26 @@ def back_btn3() -> InlineKeyboardMarkup:
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_menu"))
     return markup
+
+
+def subscribe_kb() -> InlineKeyboardMarkup:
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("Перейти к оформлению", callback_data="go_to_subscribe"))
+    markup.add(InlineKeyboardButton("↩️ Назад", callback_data="back_menu"))
+    return markup
+
+
+
+def subscribe_duration_keyboard():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    
+    keyboard.add(
+        InlineKeyboardButton(text="1 день", callback_data="subscribe_1day"),
+        InlineKeyboardButton(text="3 дня", callback_data="subscribe_3days"),
+        InlineKeyboardButton(text="Неделя", callback_data="subscribe_week"),
+        InlineKeyboardButton(text="Месяц", callback_data="subscribe_month")
+    )
+    
+    keyboard.add(InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_menu"))
+
+    return keyboard

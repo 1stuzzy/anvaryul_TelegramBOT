@@ -17,6 +17,7 @@ class Config(BaseModel):
     base_url: str
     default_key: str
     api_key: List[str]
+    freekassa_token: str
     admins_id: List[int]
     admins_chat: int
     support: str

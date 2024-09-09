@@ -1,6 +1,8 @@
 from peewee import *
 from playhouse.shortcuts import ReconnectMixin
 from playhouse.postgres_ext import PostgresqlExtDatabase
+from datetime import datetime
+
 
 from loader import load_config
 
@@ -31,22 +33,29 @@ class Warehouses(BaseModel):
     address = TextField()
 
 
-class UserRequest(BaseModel):  # Наследуем от BaseModel, а не Model
-    user_id = BigIntegerField()  # Измените на BigIntegerField
-    warehouse_ids = CharField()  # Сохраняем в виде строки, например: "1733, 303295"
-    supply_types = CharField()  # Сохраняем в виде строки, например: "qr_supply, boxes"
-    coefficient = CharField()  # Сохраняем выбранный коэффициент
-    period = CharField()  # Период
-    notification_type = CharField()
-    activate = BooleanField(default=False)
+class User(BaseModel):
+    user_id = BigIntegerField(unique=True, index=True, primary_key=True)  # Уникальный идентификатор
+    name = CharField(max_length=255)
+    username = CharField(max_length=255, unique=True, index=True)  # username также должен быть уникальным
+    subscription = BooleanField(default=False)
+    sub_date = DateField(null=True)
+    reg_date = DateTimeField(default=datetime.now().strftime('%d.%m.%y %H:%M'))
+
+
+class Payment(BaseModel):
+    payment_id = AutoField()
+    user = ForeignKeyField(User, backref='payment', on_delete='CASCADE')
+    date = DateField()
+    summ = BigIntegerField()
+    payment_status = BooleanField(default=False)
 
 
 def connect():
     base.connect()
     base.create_tables(
         [
-            Warehouses,
-            UserRequest
+        User,
+        Payment
         ]
     )
 
