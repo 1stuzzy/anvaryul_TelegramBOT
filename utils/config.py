@@ -17,13 +17,19 @@ class Config(BaseModel):
     base_url: str
     default_key: str
     api_key: List[str]
-    freekassa_token: str
     admins_id: List[int]
     admins_chat: int
     support: str
+    redis_url: str = ""
     time_zone: str = "Europe/Moscow"
     skip_updates: bool = True
     notify: bool = True
+
+    merchant_id: int
+    first_secret: str
+    second_secret: str
+    wallet_id: int
+    freekassa_token: str
 
 
 def load_config() -> Config:
