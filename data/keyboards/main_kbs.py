@@ -199,20 +199,20 @@ def subscribe_kb() -> InlineKeyboardMarkup:
 def subscription_keyboard():
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
-        InlineKeyboardButton(text="1 день", callback_data="subscribe_1day"),
-        InlineKeyboardButton(text="3 дня", callback_data="subscribe_3days"),
-        InlineKeyboardButton(text="Неделя", callback_data="subscribe_week"),
-        InlineKeyboardButton(text="Месяц", callback_data="subscribe_month")
+        InlineKeyboardButton(text="1 день", callback_data="subscribe_1"),
+        InlineKeyboardButton(text="3 дня", callback_data="subscribe_3"),
+        InlineKeyboardButton(text="7 дней", callback_data="subscribe_7"),
+        InlineKeyboardButton(text="30 дней", callback_data="subscribe_30")
     )
     return keyboard
 
 
-def payment_btn(pay_link, pay_id=None):
+def payment_btn(pay_link, pay_id, sub_days):
     keyboard = InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         InlineKeyboardButton(text="Перейти к оплате", url=f"{pay_link}")
     )
     keyboard.add(
-        InlineKeyboardButton(text="Проверить платеж", callback_data=f"checkpay_{pay_id}"),
+        InlineKeyboardButton(text="Проверить платеж", callback_data=f"checkpay_{pay_id}_{sub_days}"),
     )
     return keyboard

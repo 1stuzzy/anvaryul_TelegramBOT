@@ -48,7 +48,6 @@ class FreeKassaApi:
         }
 
         try:
-            # Используем метод GET вместо POST
             response = requests.get(self.base_url, params=params)
 
             # Печатаем все параметры запроса и ответ сервера для отладки
@@ -56,23 +55,18 @@ class FreeKassaApi:
             print(f"HTTP статус: {response.status_code}")
             print(f"Ответ от сервера: {response.text}")
 
-            # Пробуем парсить ответ как JSON
-            response_data = response.json()
-
             if response.status_code == 200:
+                # Attempt to parse JSON response
+                try:
+                    response_data = response.json()
+                except ValueError:
+                    # If JSON parsing fails, assume response is plain text
+                    response_data = {'status': response.text}
+
                 return response_data
             else:
-                raise Exception(f"Ошибка при запросе статуса платежа: {response_data}")
+                raise Exception(f"Ошибка при запросе статуса платежа: {response.text}")
 
-        except ValueError as ve:
-            print(f"Ошибка парсинга JSON: {ve}")
-            print(f"Получен ответ: {response.text}")
-            return None
         except Exception as e:
             print(f"Ошибка при запросе к API FreeKassa: {e}")
             return None
-
-    def generate_api_signature(self, order_id):
-        """Генерация подписи для проверки заказа"""
-        signature_string = f"{self.merchant_id}:{order_id}:{self.second_secret}"
-        return hashlib.md5(signature_string.encode('utf-8')).hexdigest()

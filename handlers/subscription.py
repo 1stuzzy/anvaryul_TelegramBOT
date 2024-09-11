@@ -36,14 +36,15 @@ async def process_subscription(query: types.CallbackQuery, state: FSMContext):
 
 async def handle_subscription_duration(query: types.CallbackQuery, state: FSMContext):
     await state.finish()
+
     duration = query.data.split('_')[1]
     order_id = random.randint(100000, 999999)
 
     amount, sub_time = {
-        "1day": (237.0, "1 день"),
-        "3days": (237.0 * 3, "3 дня"),
-        "week": (237.0 * 7, "1 Неделя"),
-        "month": (237.0 * 30, "1 Месяц"),
+        "1": (237.0, "1 день"),
+        "3": (237.0 * 3, "3 дня"),
+        "7": (237.0 * 7, "1 Неделя"),
+        "30": (237.0 * 30, "1 Месяц"),
     }.get(duration, (None, None))
 
     if amount is None:
@@ -51,28 +52,33 @@ async def handle_subscription_duration(query: types.CallbackQuery, state: FSMCon
 
     payment_link = client.generate_payment_link(order_id=order_id, summ=amount)
 
-    await postgre_base.create_payment(user_id=query.from_user.id, summ=amount, )
+    await postgre_base.create_payment(user_id=query.from_user.id, summ=amount)
 
     await query.message.edit_text(
-        texts.ready_pay_text.format(sub_time=sub_time,
-                                    pay_sum=int(amount)),
-        reply_markup=payment_btn(payment_link),
+        texts.ready_pay_text.format(sub_time=sub_time, pay_sum=int(amount)),
+        reply_markup=payment_btn(payment_link, order_id, duration),  # Pass the duration here
         disable_web_page_preview=True
     )
 
 
 async def check_payment_status(query: types.CallbackQuery):
     """Проверяет статус платежа."""
-    order_id = query.data.split('_')[1]  # Получаем идентификатор платежа из callback_data
-
     try:
-        # Отправляем запрос на проверку статуса платежа
+        # Extract order_id and sub_days from the callback data
+        _, order_id, sub_days_str = query.data.split('_')
+        sub_days = int(sub_days_str)  # Convert sub_days to integer
+
+        # Check the payment status
         payment_status = client.get_order(order_id=order_id)
 
-        if payment_status and payment_status.get('status') == 'success':
-            await query.message.answer("Платеж успешно завершен! ✅")
-            # Вызываем функцию для обновления данных пользователя, если это необходимо
-            #await postgre_base.set_sub_status(query.from_user.id)
+        if payment_status:
+            status = payment_status.get('status').lower() if payment_status.get('status') else ''
+            if status in ['success', 'paid', 'access', 'ok']:
+                await query.message.answer("Платеж успешно завершен! ✅")
+                await postgre_base.set_pay_status(query.from_user.id, status)
+                await postgre_base.grant_subscription(query.from_user.id, sub_days)
+            else:
+                await query.message.answer("Платеж не найден или еще не завершен. Попробуйте позже. ❌")
         else:
             await query.message.answer("Платеж не найден или еще не завершен. Попробуйте позже. ❌")
 
