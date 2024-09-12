@@ -3,7 +3,7 @@ from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Text
 
 from loader import config
-from data.keyboards.main_kbs import support_keyboard
+from data.keyboards.keyboard import support_keyboard
 from data import texts
 
 

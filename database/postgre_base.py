@@ -1,6 +1,5 @@
 from typing import Optional
 from datetime import datetime, timedelta, date
-
 from database.models import User, Payment
 from utils.datefunc import datetime_local_now
 from loader import config

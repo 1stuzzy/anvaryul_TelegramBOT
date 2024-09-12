@@ -4,7 +4,7 @@ from loguru import logger
 
 from database import postgre_base
 from data import texts
-from data.keyboards.main_kbs import warehouse_markup
+from data.keyboards.keyboard import warehouse_markup
 from handlers.subscription import process_subscribe
 
 
