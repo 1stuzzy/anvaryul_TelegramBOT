@@ -2,14 +2,15 @@ import hashlib
 import requests
 
 from urllib.parse import urlencode
+from loader import config
 
 
 class FreeKassaApi:
     def __init__(self, merchant_id, first_secret, second_secret):
         self.base_url = 'https://api.bot-t.com/payment/freekassa'
-        self.merchant_id = merchant_id
-        self.first_secret = first_secret
-        self.second_secret = second_secret
+        self.merchant_id = config.merchant_id
+        self.first_secret = config.first_secret
+        self.second_secret = config.second_secret
 
     def generate_payment_link(self, order_id, summ, currency='RUB'):
         """

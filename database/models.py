@@ -1,16 +1,12 @@
 from peewee import *
-from playhouse.shortcuts import ReconnectMixin
 from playhouse.postgres_ext import PostgresqlExtDatabase
-
 from utils.datefunc import datetime_local_now
 from loader import load_config
 
 config = load_config()
 
-
-class DB(ReconnectMixin, PostgresqlExtDatabase):
+class DB(PostgresqlExtDatabase):
     pass
-
 
 base = DB(
     database=config.db.database,
@@ -20,11 +16,9 @@ base = DB(
     port=5432,
 )
 
-
 class BaseModel(Model):
     class Meta:
         database = base
-
 
 class User(BaseModel):
     user_id = BigIntegerField(unique=True, index=True, primary_key=True)
@@ -34,7 +28,6 @@ class User(BaseModel):
     sub_date = DateField(null=True)
     reg_date = DateTimeField(default=datetime_local_now())
 
-
 class Payment(BaseModel):
     payment_id = AutoField()
     user = ForeignKeyField(User, backref='payment', on_delete='CASCADE')
@@ -42,16 +35,14 @@ class Payment(BaseModel):
     summ = BigIntegerField()
     payment_status = BooleanField(default=False)
 
-
 def connect():
     base.connect()
     base.create_tables(
         [
-        User,
-        Payment
+            User,
+            Payment
         ]
     )
-
 
 def disconnect():
     base.close()

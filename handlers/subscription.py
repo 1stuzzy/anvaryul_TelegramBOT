@@ -6,7 +6,7 @@ from loguru import logger
 from loader import config
 from database import postgre_base
 from functions.freekassa_api import FreeKassaApi
-from data.keyboards.main_kbs import subscribe_kb, subscription_keyboard, payment_btn
+from data.keyboards.keyboard import subscribe_kb, subscription_keyboard, payment_btn
 from data import texts
 
 client = FreeKassaApi(

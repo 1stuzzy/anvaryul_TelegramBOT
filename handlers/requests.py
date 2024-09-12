@@ -3,7 +3,7 @@ from loguru import logger
 
 from loader import config
 from data import texts
-from data.keyboards.main_kbs import requests_keyboard, back_btn
+from data.keyboards.keyboard import requests_keyboard, back_btn
 from database.redis_base import RedisClient
 
 redis_client = RedisClient(redis_url=config.redis_url)
