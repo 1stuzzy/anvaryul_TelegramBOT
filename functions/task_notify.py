@@ -1,10 +1,10 @@
 import asyncio
+import aiohttp
 from loguru import logger
 from aiogram import Bot
-from datetime import datetime
-from data.keyboards.main_kbs import go_booking
-from db.redis_base import RedisClient
+from database.redis_base import RedisClient
 from functions.wb_api import ApiClient
+from loader import config
 
 
 class NotificationService:
@@ -16,171 +16,91 @@ class NotificationService:
         self.min_delay_between_requests = min_delay_between_requests
         self.tasks = {}
 
-    async def check_and_notify_users(self):
-        logger.info("Starting check_and_notify_users task")
-        await self.redis_client.init()
-        delay = 5
-        while True:
-            try:
-                user_requests = await self.redis_client.get_user_requests()
-                logger.debug(f"Received {len(user_requests)} user requests")
-
-                tasks = [self.process_user_request(request) for request in user_requests]
-                if tasks:
-                    await asyncio.gather(*tasks)
-                    logger.debug("All requests processed")
-                else:
-                    logger.debug("No tasks to process")
-
-                await asyncio.sleep(delay)
-            except Exception as e:
-                logger.error(f"Error in check_and_notify_users: {e}")
-                await asyncio.sleep(delay)
-
-    async def notify_user(self, user_id: int, message: str, delay: float = 5.0):
-        try:
-            logger.debug(f"Attempting to send notification to user {user_id} in {delay} seconds")
-            await asyncio.sleep(delay)
-            markup = go_booking()
-            try:
-                await self.bot.send_message(user_id, message, reply_markup=markup, parse_mode='HTML')
-                logger.debug(f"Notification sent to user {user_id}")
-            except Exception as e:
-                if "Message is not modified" in str(e):
-                    logger.warning(f"Failed to send message to user {user_id}: {e}")
-                else:
-                    raise e
-            await asyncio.sleep(delay)
-        except Exception as e:
-            logger.error(f"Error notifying user {user_id}: {e}")
-
-    async def process_user_request(self, request):
-        user_id = int(request.get('user_id', 0))
-        task_id = request.get('task_id', '')
-
-        if not user_id:
-            logger.error("User ID missing in request")
+    async def start_all_active_requests(self):
+        """Запускает мониторинг для всех активных запросов из базы."""
+        logger.info("Запуск мониторинга всех активных запросов из базы...")
+        active_requests = await self.redis_client.get_all_active_requests()
+        if not active_requests:
+            logger.info("Нет активных запросов для мониторинга.")
             return
 
-        if user_id in self.tasks and not self.tasks[user_id].done():
-            logger.debug(f"Task for user {user_id} already exists.")
-            return
+        for request in active_requests:
+            user_id = request['user_id']
+            request_id = request.get('request_id') or request['unique_id']
+            logger.info(f"Запуск мониторинга для пользователя {user_id} по запросу {request_id}...")
+            await self.start_search(user_id, request_id, request)
 
-        loop = asyncio.get_running_loop()
-        task = loop.create_task(self._process_request_task(user_id, request))
-        self.tasks[user_id] = task
+        logger.info("Все активные запросы успешно запущены для мониторинга.")
 
-        try:
+    async def start_search(self, user_id, request_id, request_data):
+        """Запускает мониторинг для одного запроса."""
+        stop_event = asyncio.Event()
+        task = asyncio.create_task(self.process_requests(user_id, request_data, stop_event))
+        self.tasks[request_id] = (task, stop_event)
+
+    async def stop_search(self, user_id, request_id):
+        """Останавливает мониторинг для одного запроса."""
+        task, stop_event = self.tasks.pop(request_id, (None, None))
+        if task:
+            stop_event.set()
             await task
-        except asyncio.CancelledError:
-            logger.info(f"Task for user {user_id} was cancelled.")
-        except Exception as e:
-            logger.error(f"Error in task for user {user_id}: {e}")
 
-    async def _process_request_task(self, user_id: int, request):
+    async def process_requests(self, user_id, request_data, stop_event):
+        """Процесс обработки запросов для конкретного пользователя."""
         try:
-            logger.debug(f"Starting request processing: {request}")
-            notify = request.get('notify', '0')
-            status_request = request.get('status_request', 'false').lower() == 'true'
+            params = {
+                "boxTypeID": request_data["boxTypeID"],
+                "warehouse_ids": request_data["warehouse_ids"],
+                "coefficient": request_data["coefficient"]
+            }
 
-            if not status_request:
-                logger.info(f"Request for user {user_id} disabled, stopping processing.")
-                await self.stop_user_task(user_id)
-                return
+            async with aiohttp.ClientSession() as session:
+                while not stop_event.is_set():
+                    # Проверяем актуальный статус запроса перед отправкой нового запроса
+                    current_request_status = await self.redis_client.get_request_status(user_id, request_data["request_id"])
 
-            required_keys = ['user_id', 'warehouse_ids', 'coefficient', 'supply_types']
-            missing_keys = [key for key in required_keys if key not in request]
-            if missing_keys:
-                logger.warning(f"Missing keys {missing_keys} in request for user {user_id}")
-                return
+                    # Если статус запроса False, прекращаем обработку
+                    if not current_request_status:
+                        logger.info(f"Запрос {request_data['request_id']} пользователя {user_id} остановлен.")
+                        break
 
-            try:
-                coefficient = float(request['coefficient'])
-                notify = int(notify) if notify is not None else 0
-                warehouse_ids = request['warehouse_ids'].split(',')
-                supply_types = request['supply_types'].split(',')
-                logger.debug(f"Processing request for user_id: {user_id}, coefficient: {coefficient}, notify: {notify}")
-            except (ValueError, TypeError) as e:
-                logger.error(f"Error in request data for user {user_id}: {e}")
-                return
+                    logger.debug(f"Отправка запроса для пользователя {user_id} с параметрами: {params}")
+                    data = await self.api_client.get_coefficient(request_data["warehouse_ids"])
+                    if data is None:
+                        logger.error(f"Не удалось получить данные от API для пользователя {user_id}")
+                        break  # Прекращаем обработку, если данные не получены
 
-            async with self.semaphore:
-                await asyncio.sleep(self.min_delay_between_requests)
-
-                try:
-                    logger.debug(f"Attempting to fetch coefficients for user {user_id}")
-                    coefficients = await self.api_client.get_coefficients(warehouse_ids=warehouse_ids)
-                    if not coefficients:
-                        logger.info(f"No coefficients fetched for user {user_id}")
-                        return
-                except Exception as e:
-                    logger.error(f"Error fetching coefficients for user {user_id}: {e}")
-                    return
-
-                logger.debug(f"Filtering coefficients for user {user_id}")
-                filtered_coefficients = [
-                    coef for coef in coefficients
-                    if coef.get('warehouseID') is not None and int(coef.get('warehouseID')) in map(int, warehouse_ids)
-                       and coef.get('boxTypeID') is not None and int(coef.get('boxTypeID')) in map(int, request['boxTypeID'].split(','))
-                ]
-
-                if not filtered_coefficients:
-                    logger.info(f"No relevant coefficients found for request for user {user_id}")
-                    return
-
-                for coef in filtered_coefficients:
-                    coef_value = coef.get('coefficient')
-                    box_type_id = coef.get('boxTypeID')
-                    date = datetime.strptime(coef.get('date'), '%Y-%m-%dT%H:%M:%SZ').strftime('%d.%m.%Y')
-
-                    relevant_change = False
-
-                    if request['coefficient'].startswith("<"):
-                        threshold = float(request['coefficient'][1:])
-                        if coef_value >= 0 and coef_value < threshold:
-                            relevant_change = True
-                            coefficient_display = f"<{coef_value}"
-                    else:
-                        threshold = float(request['coefficient'])
-                        if coef_value >= 0 and coef_value <= threshold:
-                            relevant_change = True
-                            coefficient_display = str(coef_value)
-
-                    if relevant_change:
-                        message_key = f"sent:{user_id}:{coef['warehouseID']}:{box_type_id}:{coef['date']}:{coef_value}"
-                        already_sent = await self.redis_client.redis.exists(message_key)
-
-                        if already_sent:
-                            logger.debug(f"Message already sent to user {user_id}: {message_key}")
-                        else:
-                            logger.debug(f"Sending notification to user {user_id}")
-                            message = (
-                                f"<b>🎉 Slot found:</b>\n\n"
-                                f"<i><b>Date:</b> {date}</i>\n"
-                                f"<i><b>Warehouse:</b> {coef['warehouseName']}</i>\n"
-                                f"<i><b>Supply Type:</b> {coef['boxTypeName']}</i>\n"
-                                f"<i><b>Coefficient:</b> {coefficient_display}</i>\n"
-                            )
-
-                            await self.notify_user(user_id, message)
-                            await self.redis_client.redis.set(message_key, "sent", ex=24 * 60 * 60)
-
-                            if notify == 0:
-                                logger.info(f"Request for user {user_id} completed after first notification.")
-                                await self.stop_user_task(user_id)
-                                return
-
+                    logger.debug(f"Получен ответ от API для пользователя {user_id}: {data}")
+                    await self.process_response(user_id, data, request_data["warehouse_ids"], request_data["coefficient"])
+                    await asyncio.sleep(self.min_delay_between_requests)
         except Exception as e:
-            logger.error(f"Error processing request for user {user_id}: {e}")
+            logger.error(f"Ошибка при обработке запросов для пользователя {user_id}: {e}")
 
-    async def stop_user_task(self, user_id: int):
-        if user_id in self.tasks:
-            task = self.tasks[user_id]
-            if not task.done():
-                task.cancel()  # Отправляем запрос на отмену задачи
-                await task  # Ждем завершения задачи
-            del self.tasks[user_id]  # Удаляем задачу из словаря
 
-            logger.info(f"Task for user {user_id} successfully stopped.")
+    async def process_response(self, user_id, data, selected_warehouse_ids, max_coefficient):
+        """Обработка ответа от API и отправка уведомлений пользователю."""
+        logger.debug(f"Обработка ответа для пользователя {user_id}: {data}")
+        if isinstance(data, list):
+            max_coefficient = float(max_coefficient)
+            for entry in data:
+                # Преобразуем warehouseID в строку перед проверкой и проверяем коэффициент
+                if str(entry["warehouseID"]) in selected_warehouse_ids:
+                    # Проверяем, что коэффициент также преобразован в число перед сравнением
+                    if entry["coefficient"] is not None and entry["coefficient"] >= 0 and float(entry["coefficient"]) <= max_coefficient:
+                        message = f"🟢 Найдено совпадение: {entry}"
+                        await self.send_notification(user_id, message)
+                    else:
+                        logger.debug(f"Коэффициент {entry['coefficient']} недопустим (либо отрицательный, либо превышает {max_coefficient}). Пропуск.")
+                else:
+                    logger.debug(f"Склад {entry['warehouseID']} не соответствует выбранным пользователем {selected_warehouse_ids}. Пропуск.")
         else:
-            logger.error(f"Task for user {user_id} not found.")
+            logger.error(f"Некорректный формат данных: {data}")
+
+
+    async def send_notification(self, user_id, message):
+        """Отправка уведомления пользователю."""
+        try:
+            await self.bot.send_message(user_id, message)
+            logger.info(f"Уведомление отправлено пользователю {user_id}")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке уведомления пользователю {user_id}: {e}")
