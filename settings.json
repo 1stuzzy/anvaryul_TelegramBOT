@@ -2,13 +2,15 @@
     "db": {
         "database": "Base",
         "user": "postgres",
-        "password": "456852123",
+        "password": "roopass",
         "host": "localhost"
     },
-    "api_token": "6697941790:AAGF17sNqO6Ejd7vD58gH-mF6HCBIL4woOk",
+
+    "api_token": "7501250850:AAE1pfHLx9VllhBVXWVv_m1Gx5Gyvc35Tzg",
     "admins_id": [5889390958],
     "support": "support",
-    "admins_chat": 0,
+    "chat_id": -1002182568188,
+    "chat_url": "https://t.me/+uIRmCJgVlRY3MWYy",
     "time_zone": "Europe/Moscow",
     "base_url": "https://supplies-api.wildberries.ru/api/v1",
     "default_key": "eyJhbGciOiJFUzI1NiIsImtpZCI6IjIwMjQwODE5djEiLCJ0eXAiOiJKV1QifQ.eyJlbnQiOjEsImV4cCI6MTc0MDQ0Nzc4NCwiaWQiOiJhN2I3OWQ3MS01M2Y0LTRmYTktOTc1Yi01ZDBlNGYxYTc2YTgiLCJpaWQiOjExMzg5ODIzOCwib2lkIjoxMzUyNTU5LCJzIjoxMDczNzQyODQ4LCJzaWQiOiIzYjEzMjg1Zi1hNGIwLTRhZWYtOWJiNi04Njk0NzUzOTMwMTAiLCJ0IjpmYWxzZSwidWlkIjoxMTM4OTgyMzh9.mPd1l0gug_Tlps79PtRXPBk-cah97PP2iOGseKOctOUo6zWhdzuGyrfG5NWpsJUc42jD1zenG1uRwTtwPICEXQ",
@@ -20,5 +22,11 @@
         "eyJhbGciOiJFUzI1NiIsImtpZCI6IjIwMjQwOTA0djEiLCJ0eXAiOiJKV1QifQ.eyJlbnQiOjEsImV4cCI6MTc0MTMyODY4NSwiaWQiOiJkYmRhNmExMi1lZjJhLTQ2YmItODJhYS05ZWFiMjgzZTgwNTQiLCJpaWQiOjgzOTM2MDk5LCJvaWQiOjExMTU0NjIsInMiOjEwMjQsInNpZCI6ImVkZTZlYTdmLTk5M2QtNGMwZi04MTkzLWE4YzE2ZGQzODljYiIsInQiOmZhbHNlLCJ1aWQiOjgzOTM2MDk5fQ.WVw2NgKnKIEdEmBbxCoO_o1pxS0L7eCpCDH3TcvJ9VPrR0UhLq59N8xsbI-jv3fEKJ2I88pcvPbNXhPszAITAw",
         "eyJhbGciOiJFUzI1NiIsImtpZCI6IjIwMjQwODE5djEiLCJ0eXAiOiJKV1QifQ.eyJlbnQiOjEsImV4cCI6MTc0MDQ0Nzc4NCwiaWQiOiJhN2I3OWQ3MS01M2Y0LTRmYTktOTc1Yi01ZDBlNGYxYTc2YTgiLCJpaWQiOjExMzg5ODIzOCwib2lkIjoxMzUyNTU5LCJzIjoxMDczNzQyODQ4LCJzaWQiOiIzYjEzMjg1Zi1hNGIwLTRhZWYtOWJiNi04Njk0NzUzOTMwMTAiLCJ0IjpmYWxzZSwidWlkIjoxMTM4OTgyMzh9.mPd1l0gug_Tlps79PtRXPBk-cah97PP2iOGseKOctOUo6zWhdzuGyrfG5NWpsJUc42jD1zenG1uRwTtwPICEXQ"
     ],
-    "freekassa_token": "cbddd87e3efc5331ad4a44b3560804ea"
+    "redis_url": "redis://localhost",
+    "merchant_id": 54734,
+    "freekassa_token": "6b5fa3d2b594592fa35eb9493632b5cf",
+    "first_secret": "]!8G%*gr)(_z))5",
+    "second_secret": "pGKfy0{2Rbw=sEN",
+    "wallet_id": 54734
+
 }

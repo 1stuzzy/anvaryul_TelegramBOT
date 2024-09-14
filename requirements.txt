@@ -3,3 +3,8 @@ aioredis==2.0.1
 pydantic
 loguru
 celery
+peewee
+requests
+apscheduler
+flask
+psycopg2-binary
