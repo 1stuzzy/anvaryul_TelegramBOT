@@ -3,19 +3,13 @@ from aiogram import types
 from aiogram.dispatcher import FSMContext
 from loguru import logger
 
-from loader import config
+from loader import config, dp
 from database import postgre_base, models
-from functions.freekassa_api import FreeKassaApi
-from data import texts, keyboards
-
-client = FreeKassaApi(
-    merchant_id=config.merchant_id,
-    first_secret=config.first_secret,
-    second_secret=config.second_secret
-)
+from data import texts, keyboards, states
 
 
 async def process_subscribe(query: types.CallbackQuery, state: FSMContext):
+    """Обрабатывает запрос на подписку."""
     await state.finish()
     if query.data == 'subscribe':
         await query.message.edit_text(texts.subscribe_text,
@@ -28,12 +22,14 @@ async def process_subscribe(query: types.CallbackQuery, state: FSMContext):
 
 
 async def process_subscription(query: types.CallbackQuery, state: FSMContext):
+    """Начинает процесс выбора подписки."""
     await state.finish()
     await query.message.edit_text(texts.select_subtime_text,
                                   reply_markup=keyboards.subscription_keyboard())
 
 
 async def handle_subscription_duration(query: types.CallbackQuery, state: FSMContext):
+    """Обрабатывает выбор длительности подписки и запрос на оплату."""
     await state.finish()
 
     duration = query.data.split('_')[1]
@@ -49,54 +45,95 @@ async def handle_subscription_duration(query: types.CallbackQuery, state: FSMCon
     if amount is None:
         return
 
-    payment_link = client.generate_payment_link(order_id=order_id, summ=amount)
-
     await postgre_base.create_payment(user_id=query.from_user.id, summ=amount)
 
     await query.message.edit_text(
-        texts.ready_pay_text.format(sub_time=sub_time, pay_sum=int(amount)),
-        reply_markup=keyboards.payment_btn(payment_link, order_id, duration),
+        texts.ready_pay_text.format(sub_time=sub_time, pay_sum=int(amount), requisites=config.requisites),
+        reply_markup=keyboards.payment_btn(order_id, duration),
         disable_web_page_preview=True
     )
 
 
 async def check_payment_status(query: types.CallbackQuery):
-    """Проверяет статус платежа."""
+    """Напоминает пользователю о необходимости предоставить квитанцию."""
     user = models.User.get_or_none(models.User.user_id == query.from_user.id)
     if not user:
         await query.message.answer("Пользователь не найден.")
         return
 
-    try:
-        _, order_id, sub_days_str = query.data.split('_')
-        sub_days = int(sub_days_str)
+    await query.message.answer(
+        "Для подтверждения оплаты, пожалуйста, отправьте квитанцию в виде скриншота или документа.",
+        reply_markup=keyboards.close_btn()
+    )
 
-        payment_status = client.get_order(order_id=order_id)
 
-        if payment_status:
-            status = payment_status.get('status').lower() if payment_status.get('status') else ''
-            if status in ['success', 'paid', 'access', 'ok']:
-                await postgre_base.set_pay_status(query.from_user.id, status)
+async def handle_receipt_submission(message: types.Message, state: FSMContext):
+    """Обрабатывает квитанцию и отправляет ее в чат администраторов."""
+    if message.content_type not in ['photo', 'document']:
+        await message.answer("Пожалуйста, отправьте квитанцию в виде скриншота или документа.")
+        return
 
-                subscription = await postgre_base.grant_subscription(query.from_user.id, sub_days)
+    data = await state.get_data()
+    order_id = data.get('order_id')
+    sub_days = data.get('sub_days')
 
-                end_date = subscription.end_date.strftime('%d.%m.%Y %H:%M')
+    caption = texts.new_reception.format(
+        name=message.from_user.full_name,
+        username=message.from_user.username or "неизвестен",
+        order_id=order_id,
+        sub_days=sub_days
+    )
 
-                await query.message.edit_text(texts.sub_success_payed.format(sub_days=sub_days,
-                                                                             end_date=end_date),
-                                              reply_markup=keyboards.close_btn())
-            else:
-                await query.message.answer("Платеж не найден или еще не завершен. Попробуйте позже. ❌")
-        else:
-            await query.message.answer("Платеж не найден или еще не завершен. Попробуйте позже. ❌")
+    if message.content_type == 'photo':
+        await dp.bot.send_photo(
+            config.admins_chat,
+            photo=message.photo[-1].file_id,
+            caption=caption,
+            reply_markup=keyboards.payment_verification_btn(sub_days, message.from_user.id)
+        )
+    elif message.content_type == 'document':
+        await dp.bot.send_document(
+            config.admins_chat,
+            document=message.document.file_id,
+            caption=caption,
+            reply_markup=keyboards.payment_verification_btn(sub_days, message.from_user.id)
+        )
 
-    except Exception as e:
-        logger.error(f"Ошибка при проверке статуса платежа: {e}")
-        await query.message.answer("Произошла ошибка при проверке платежа. Пожалуйста, попробуйте позже.")
+    await message.answer(
+        "Квитанция отправлена на проверку администратору. Ожидайте подтверждения.",
+        reply_markup=keyboards.close_btn()
+    )
+    await state.finish()
+
+
+async def verify_payment_callback(query: types.CallbackQuery):
+    """Обрабатывает решение администратора о подтверждении или отклонении платежа."""
+    action, _, sub_days_str, user_id_str = query.data.split('_')
+    user_id = int(user_id_str)
+    sub_days = int(sub_days_str)
+
+    if action == "confirm":
+        subscription = await postgre_base.grant_subscription(user_id, sub_days)
+        end_date = subscription.end_date.strftime('%d.%m.%Y %H:%M')
+
+        await dp.bot.send_message(
+            user_id,
+            texts.sub_success_payed.format(sub_days=sub_days, end_date=end_date)
+        )
+        await query.message.edit_text(texts.requirement_payed, reply_markup=keyboards.close_btn())
+    elif action == "reject":
+        await dp.bot.send_message(user_id, texts.requirement_decline)
+        await query.message.edit_text(texts.requirement_decline_admin, reply_markup=keyboards.close_btn())
+
+    logger.info(
+        f"Администратор {query.from_user.id} {'подтвердил' if action == 'confirm' else 'отклонил'} платеж пользователя {user_id}."
+    )
 
 
 def register_subscription_handlers(dp):
+    """Регистрация обработчиков событий для подписки."""
     dp.callback_query_handler(lambda call: call.data in ['subscribe', 'not_subscribe'], state='*')(process_subscribe)
     dp.callback_query_handler(lambda call: call.data == 'go_to_subscribe', state='*')(process_subscription)
     dp.callback_query_handler(lambda call: call.data.startswith("subscribe_"), state='*')(handle_subscription_duration)
     dp.callback_query_handler(lambda call: call.data.startswith("checkpay_"), state='*')(check_payment_status)
+    dp.callback_query_handler(lambda call: call.data.startswith("verify_"), state='*')(verify_payment_callback)

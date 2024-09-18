@@ -38,9 +38,7 @@ async def on_startup(dispatcher: Dispatcher):
     scheduler.add_job(check_subscriptions, 'interval', minutes=1)
     logger.info("Scheduler job for check_subscriptions added.")
 
-    await notification_service.start_all_active_requests()
-
-    scheduler.start()
+    notification_service.start_scheduler()
 
 
 async def on_shutdown(dispatcher: Dispatcher):

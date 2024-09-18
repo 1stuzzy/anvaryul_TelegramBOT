@@ -1,62 +1,78 @@
 import aioredis
 import uuid
 
-from datetime import datetime
 from loguru import logger
 from loader import config
 
 
 class RedisClient:
-    def __init__(self, redis_url=config.redis_url):
+    def __init__(self, redis_url):
         self.redis_url = redis_url
         self.redis = None
+
+    async def ensure_connection(self):
+        if not self.redis:
+            try:
+                self.redis = await aioredis.from_url(self.redis_url, decode_responses=True)
+                logger.info("Соединение с Redis установлено.")
+            except Exception as e:
+                raise e
 
     async def init(self):
         """Инициализация подключения к Redis."""
         if not self.redis:
             self.redis = await aioredis.from_url(self.redis_url, decode_responses=True)
 
-    async def ensure_connection(self):
-        if self.redis is None:
-            await self.init()
-
-    async def save_request(self, user_id, warehouse_ids, boxTypeID, coefficient, start_date, end_date, status_request=True, notify_until_first=False):
+    async def save_request(self, user_id, warehouse_ids, boxTypeID, coefficient, start_date, end_date,
+                           status_request=True, notify_until_first=False):
         await self.ensure_connection()
-        unique_id = await self.redis.incr(f"user_request:{user_id}")
+        unique_id = str(uuid.uuid4())
         key = f"user_request:{user_id}:{unique_id}"
 
+        try:
+            coefficient = int(coefficient) if coefficient else 0
+        except ValueError as e:
+            coefficient = 0
+
         request_data = {
-            "request_id": str(unique_id),
+            "request_id": unique_id,
             "user_id": str(user_id),
             "status_request": str(status_request),
             "warehouse_ids": ",".join(map(str, warehouse_ids)),
             "boxTypeID": boxTypeID,
-            "coefficient": coefficient,
+            "coefficient": str(coefficient),  # Сохраняем как строку
             "start_date": start_date,
             "end_date": end_date,
             "notify_until_first": str(notify_until_first)
         }
 
         try:
-            await self.redis.hmset(key, mapping=request_data)
-            await self.redis.save()
+            async with self.redis.pipeline() as pipe:
+                await pipe.hmset(key, mapping=request_data)
+                await pipe.execute()
+            await self.redis.bgsave()
         except Exception as e:
             logger.exception(f"Ошибка при сохранении запроса пользователя {user_id} в Redis: {e}")
 
     async def get_user_requests(self, user_id):
         await self.ensure_connection()
+        if self.redis is None:
+            logger.error("Соединение с Redis не установлено.")
+            return []
+
         try:
             keys_pattern = f"user_request:{user_id}:*"
             keys = await self.redis.keys(keys_pattern)
 
-            user_requests = []
+            if not keys:
+                return []
 
-            for key in keys:
-                request_data = await self.redis.hgetall(key)
-                if request_data and request_data.get("user_id") == str(user_id):
-                    user_requests.append(request_data)
+            async with self.redis.pipeline() as pipe:
+                for key in keys:
+                    pipe.hgetall(key)
+                user_requests = await pipe.execute()
 
-            return user_requests
+            return [req for req in user_requests if req.get("user_id") == str(user_id)]
         except Exception as e:
             logger.exception(f"Ошибка при извлечении запросов пользователя {user_id}: {e}")
             return []
@@ -72,11 +88,14 @@ class RedisClient:
         """Получает все активные запросы пользователей из Redis."""
         try:
             keys = await self.redis.keys('user_request:*')
-            user_requests = []
-            for key in keys:
-                request_data = await self.redis.hgetall(key)
-                if request_data:
-                    user_requests.append(request_data)
+            if not keys:
+                return []
+
+            async with self.redis.pipeline() as pipe:
+                for key in keys:
+                    pipe.hgetall(key)
+                user_requests = await pipe.execute()
+
             return user_requests
         except Exception as e:
             logger.exception(f"Ошибка при получении запросов пользователей: {e}")
@@ -96,12 +115,15 @@ class RedisClient:
         await self.ensure_connection()
         try:
             keys = await self.redis.keys("warehouse:*")
-            warehouses = []
-            for key in keys:
-                warehouse_data = await self.redis.hgetall(key)
-                if warehouse_data:
-                    warehouses.append({"id": warehouse_data['id'], "name": warehouse_data['name']})
-            return warehouses
+            if not keys:
+                return []
+
+            async with self.redis.pipeline() as pipe:
+                for key in keys:
+                    pipe.hgetall(key)
+                warehouses = await pipe.execute()
+
+            return [{"id": wh['id'], "name": wh['name']} for wh in warehouses if wh]
         except Exception as e:
             logger.exception(f"Ошибка при получении списка складов: {e}")
             return []
@@ -111,13 +133,7 @@ class RedisClient:
         await self.ensure_connection()
         try:
             warehouse_key = f"warehouse:{warehouse_id}"
-            warehouse_data = await self.redis.hgetall(warehouse_key)
-
-            if not warehouse_data:
-                logger.warning(f"Склад с ID {warehouse_id} не найден в Redis.")
-                return None
-
-            return warehouse_data
+            return await self.redis.hgetall(warehouse_key)
         except Exception as e:
             logger.exception(f"Ошибка при получении данных склада с ID {warehouse_id} из Redis: {e}")
             return None
@@ -139,13 +155,12 @@ class RedisClient:
         try:
             request_key = f"user_request:{user_id}:{request_id}"
 
-            key_exists = await self.redis.exists(request_key)
-            if not key_exists:
+            if not await self.redis.exists(request_key):
                 logger.error(f"Запрос не найден для пользователя: {user_id} с request_id: {request_id}")
                 return False
 
             result = await self.redis.hset(request_key, 'status_request', 'False')
-            if result is not None:
+            if result is not None and result > 0:
                 logger.info(f"Статус запроса {request_id} для пользователя {user_id} успешно обновлен на False.")
                 return True
             else:
@@ -155,6 +170,7 @@ class RedisClient:
         except Exception as e:
             logger.error(f"Ошибка при изменении статуса запроса {request_id} для пользователя {user_id}: {e}")
             return False
+
 
     async def add_notify(self, user_id, message):
         """Добавление уведомления в очередь."""
@@ -167,31 +183,33 @@ class RedisClient:
 
     async def get_all_active_requests(self):
         """Возвращает все активные запросы."""
-        keys = await self.redis.keys("user_request:*")
-        active_requests = []
-
-        for key in keys:
-            if key.count(':') == 2:
-                data = await self.redis.hgetall(key)
-                if data and data.get('status_request') == 'True':
-                    active_requests.append(data)
-
-        return active_requests
-
-    async def is_notification_sent(self, result_id):
-        """Проверяет, было ли уже отправлено уведомление с данным идентификатором."""
         await self.ensure_connection()
         try:
-            return await self.redis.exists(f"notification_sent:{result_id}") == 1
+            keys = await self.redis.keys("user_request:*")
+            if not keys:
+                return []
+
+            async with self.redis.pipeline() as pipe:
+                for key in keys:
+                    pipe.hgetall(key)
+                active_requests = await pipe.execute()
+
+            return [req for req in active_requests if req.get('status_request') == 'True']
         except Exception as e:
-            logger.error(f"Ошибка при проверке отправленного уведомления {result_id}: {e}")
+            logger.error(f"Ошибка при получении активных запросов: {e}")
+            return []
+
+    async def is_notification_sent(self, message_id):
+        """Проверяет, было ли уведомление с данным идентификатором отправлено недавно."""
+        try:
+            return await self.redis.exists(f"notification_sent:{message_id}")
+        except Exception as e:
+            logger.error(f"Ошибка при проверке статуса уведомления в Redis: {e}")
             return False
 
-    async def mark_notification_as_sent(self, result_id):
-        """Отмечает, что уведомление с данным идентификатором было отправлено."""
-        await self.ensure_connection()
+    async def mark_notification_as_sent(self, message_id, delay):
+        """Помечает уведомление как отправленное с указанным временем жизни."""
         try:
-            await self.redis.set(f"notification_sent:{result_id}", "True")
-            logger.info(f"Уведомление с ID {result_id} отмечено как отправленное.")
+            await self.redis.set(f"notification_sent:{message_id}", 1, ex=delay)
         except Exception as e:
-            logger.error(f"Ошибка при отметке отправленного уведомления {result_id}: {e}")
+            logger.error(f"Ошибка при сохранении статуса уведомления в Redis: {e}")

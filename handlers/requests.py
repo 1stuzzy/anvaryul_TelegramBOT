@@ -57,12 +57,20 @@ async def handle_request_details(query: types.CallbackQuery):
             boxTypeID = request.get('boxTypeID')
             supply_type = executional.get_supply_name(boxTypeID)
 
+            coefficient = request.get('coefficient', '')
+            if coefficient and float(coefficient) != 0:
+                coefficient_text = f"до {coefficient}"
+            elif coefficient == '0':
+                coefficient_text = '0'
+            else:
+                coefficient_text = coefficient  # Оставляем как есть, если оно пустое или None
+
             details_message = texts.details_text.format(
                 number=number,
                 warehouse_name=', '.join(warehouse_names),
                 date=start_date,
                 supply_type=supply_type,
-                coefficient=request.get('coefficient'),
+                coefficient=coefficient_text,  # Используем обработанный текст коэффициента
                 period=f'{start_date} - {end_date}',
                 notify_type='До первого совпадения' if request.get('notify_until_first', 'False').lower() == 'true'
                 else 'Без ограничений'
@@ -148,6 +156,8 @@ async def process_supply_type_selection(query: types.CallbackQuery, state: FSMCo
     elif action == "unselecttype":
         selected_supply_types.discard(type_id)
 
+    logger.debug(f"Selected supply types updated: {selected_supply_types}")
+
     await state.update_data(selected_supply_types=selected_supply_types)
     await query.message.edit_reply_markup(reply_markup=keyboards.supply_types_markup(selected_supply_types))
 
@@ -206,6 +216,13 @@ async def process_create_notification(query: types.CallbackQuery, state: FSMCont
 
         selected_supply_types = user_data.get("selected_supply_types", [])
 
+        # Добавляем логирование для проверки содержимого selected_supply_types
+        logger.debug(f"Selected supply types before saving request: {selected_supply_types}")
+
+        if not selected_supply_types:
+            await query.answer("Пожалуйста, выберите хотя бы один тип поставки.", show_alert=True)
+            return
+
         supply = ', '.join([name for name, (_, type_id) in texts.types_map.items() if type_id in selected_supply_types])
 
         box_id = [str(type_id) for _, (_, type_id) in texts.types_map.items() if type_id in selected_supply_types]
@@ -213,7 +230,7 @@ async def process_create_notification(query: types.CallbackQuery, state: FSMCont
         await redis_client.save_request(
             user_id=query.from_user.id,
             warehouse_ids=warehouse_ids,
-            boxTypeID=','.join(box_id),
+            boxTypeID=','.join(box_id) if box_id else "Неизвестный тип",
             coefficient=coefficient_range,
             start_date=start_date,
             end_date=end_date,
@@ -221,14 +238,12 @@ async def process_create_notification(query: types.CallbackQuery, state: FSMCont
             notify_until_first=notify_until_first
         )
 
-        await notification_service.start_all_active_requests()
-
         coefficient_sign = "<" if coefficient_range.startswith('<') and coefficient_range != "0" else ""
 
         await query.message.edit_text(texts.notification_text.format(
             warehouse_names=escape(warehouse_names or ""),
             supply=escape(supply or ""),
-            coefficient=escape(coefficient_sign + (coefficient_range.lstrip('<') if coefficient_range else "")),
+            coefficient=escape(coefficient_sign + (coefficient_range.lstrip('до') if coefficient_range else "")),
             start_date=escape(start_date),
             end_date=escape(end_date)
         ))
@@ -245,11 +260,9 @@ async def stop_search_callback_handler(query: types.CallbackQuery, state: FSMCon
         request_id = query.data.split("_")[2]
         user_id = query.from_user.id
 
-        # Получаем экземпляр NotificationService из бота
         notification_service = query.bot.get('notification_service')
 
-        # Останавливаем поиск
-        await notification_service.stop_search(user_id, request_id)
+        await notification_service.stop_request_monitoring(user_id, request_id)
 
         redis_client = query.bot.get('redis_client')
         await redis_client.stop_request(user_id, request_id)

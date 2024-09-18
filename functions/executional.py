@@ -1,6 +1,6 @@
 from data import texts
 from database.models import User, Subscription
-from datetime import datetime
+from loader import config
 from utils.datefunc import normalized_local_now
 
 
@@ -46,3 +46,7 @@ def check_subscriptions():
             subscription.save()
     else:
         return True
+
+
+def is_admin(user_id: int) -> bool:
+    return user_id in config.admins_id

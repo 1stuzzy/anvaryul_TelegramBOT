@@ -211,20 +211,20 @@ def subscribe_kb() -> InlineKeyboardMarkup:
 def subscription_keyboard():
     keyboard = InlineKeyboardMarkup(row_width=1)
     keyboard.add(
-        InlineKeyboardButton(text="1 месяц", callback_data="subscribe_30"),
-        InlineKeyboardButton(text="2 месяца", callback_data="subscribe_60"),
-        InlineKeyboardButton(text="3 месяца", callback_data="subscribe_90"),
-        InlineKeyboardButton(text="1 год", callback_data="subscribe_365"),
+        InlineKeyboardButton(text=f"1 месяц - 237 RUB", callback_data="subscribe_30"),
+        InlineKeyboardButton(text=f"2 месяца - 474 RUB", callback_data="subscribe_60"),
+        InlineKeyboardButton(text=f"3 месяца - 711 RUB", callback_data="subscribe_90"),
+        InlineKeyboardButton(text=f"1 год - 2844 RUB", callback_data="subscribe_365"),
         InlineKeyboardButton(text="❌ Отмена", callback_data="close_callback")
     )
     return keyboard
 
 
-def payment_btn(pay_link, pay_id, sub_days):
+def payment_btn(pay_id, sub_days):
     keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton(text="Перейти к оплате", url=f"{pay_link}")
-    )
+    #keyboard.add(
+        #InlineKeyboardButton(text="Перейти к оплате", url=f"{pay_link}")
+    #)
     keyboard.add(
         InlineKeyboardButton(text="Я оплатил", callback_data=f"checkpay_{pay_id}_{sub_days}"),
     )
@@ -241,3 +241,25 @@ def back():
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton(text="↩️ Назад", callback_data="back_menu"))
     return keyboard
+
+
+def payment_verification_btn(sub_days: int, user_id: int) -> InlineKeyboardMarkup:
+    """Создает клавиатуру с кнопками для подтверждения или отклонения платежа."""
+    keyboard = InlineKeyboardMarkup()
+
+    confirm_btn = InlineKeyboardButton(
+        text="✅ Подтвердить платеж",
+        callback_data=f"payment_confirm_{sub_days}_{user_id}"
+    )
+
+    reject_btn = InlineKeyboardButton(
+        text="❌ Отклонить платеж",
+        callback_data=f"payment_reject_{sub_days}_{user_id}"
+    )
+
+    # Добавляем кнопки в клавиатуру
+    keyboard.add(confirm_btn, reject_btn)
+
+    return keyboard
+
+

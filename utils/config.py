@@ -18,6 +18,7 @@ class Config(BaseModel):
     default_key: str
     api_key: List[str]
     admins_id: List[int]
+    admins_chat: str
     chat_id: int
     chat_url: str
     support: str
@@ -31,6 +32,8 @@ class Config(BaseModel):
     second_secret: str
     wallet_id: int
     freekassa_token: str
+
+    requisites: str
 
 
 def load_config() -> Config:
